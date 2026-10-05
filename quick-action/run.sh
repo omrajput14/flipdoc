@@ -1,6 +1,12 @@
 #!/bin/zsh
-# Paste into Automator > Quick Action (Files: PDF files, Finder) > Run Shell Script, "Pass input: as arguments".
+# Called by the Finder Quick Action with the selected PDFs as arguments.
+# Automator runs with a minimal PATH, so add the usual uv install locations.
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+project="${0:A:h:h}"
 for f in "$@"; do
-  /Users/0mrajput/.local/bin/uv run --project /Users/0mrajput/Desktop/flipdoc flipdoc tables "$f"
+  if msg=$(uv run --project "$project" flipdoc tables "$f" 2>&1); then
+    osascript -e "display notification \"${msg//\"/}\" with title \"Flipdoc\""
+  else
+    osascript -e "display notification \"Failed: ${f:t}\" with title \"Flipdoc\""
+  fi
 done
-osascript -e 'display notification "Done" with title "Flipdoc"'
