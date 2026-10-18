@@ -1,48 +1,41 @@
-# Flipdoc
+# FlipDoc for Mac 🍊📄
 
-Right-click a PDF on your Mac and get its tables as an Excel file. Everything runs locally.
+> **The zero-click offline document & file transformer.**  
+> Drag a file, tap `Shift` to convert, `Command` for document tools, or `Control` for quick actions. Everything runs 100% locally on your Mac.
 
-## Requirements
+---
 
-- macOS
-- [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+## ✨ Features
 
-## Install
+- **Zero-Click Drag & Drop**: Drag any file, tap a key, and drop onto the radial fan overlay.
+  - `⇧ Shift` → Format Conversions (PDF to Excel tables, Markdown, PNG/JPG, text).
+  - `⌘ Command` → Document Tools (Table extraction, OCR text recognition, PDF compression).
+  - `⌃ Control` → Quick Actions (Float preview, AirDrop, Copy path, Terminal).
+- **100% Offline & Private**: Zero uploads, no internet connection required.
+- **Native Apple Silicon Speed**: Built in Swift 6, AppKit, SwiftUI, PDFKit, and Apple Vision.
+- **Dual Mode**: Runs as a lightweight menu bar daemon (`LSUIElement`) or directly from the CLI.
 
-```bash
-git clone https://github.com/omrajput14/flipdoc.git
-cd flipdoc
-uv sync
-```
+---
 
-## Usage
+## 🛠️ Build & Run
 
-```bash
-uv run flipdoc tables invoice.pdf            # writes invoice.xlsx next to the PDF
-uv run flipdoc tables invoice.pdf -o out.xlsx
-```
-
-Each table becomes its own sheet, named by page and table number (`p2-t3`).
-
-## Right-click in Finder
-
-1. Open **Automator** → **New** → **Quick Action**.
-2. Set *Workflow receives current* to **PDF files** in **Finder**.
-3. Add **Run Shell Script**, set *Pass input* to **as arguments**, and enter the full path to the script:
-   ```bash
-   /path/to/flipdoc/quick-action/run.sh "$@"
-   ```
-4. Save as `Flipdoc: Tables → Excel`.
-
-Right-click any PDF → **Quick Actions** → **Flipdoc: Tables → Excel**. A notification shows the result.
-
-## Limitations
-
-- Only PDFs with a text layer. Scanned PDFs return "No tables found" (OCR is planned).
-- Tables are detected from ruling lines and layout; borderless or irregular tables may come out wrong.
-
-## Development
+### Requirements
+- macOS 13.0+ (Ventura, Sonoma, Sequoia)
+- Swift 6.0+
 
 ```bash
-uv run pytest
+# Build the project
+swift build -c release
+
+# Launch the menu bar background agent
+.build/release/FlipDoc
+
+# Or use the CLI for batch conversions:
+.build/release/FlipDoc tables invoice.pdf       # extracts tables to invoice.xlsx
+.build/release/FlipDoc markdown document.pdf     # converts PDF to document.md
 ```
+
+---
+
+## 📋 Documentation
+See [`PRD.md`](./PRD.md) for complete technical architecture, conversion matrix, and roadmap.
