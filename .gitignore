@@ -1,5 +1,7 @@
-.venv/
-__pycache__/
-*.xlsx
-tests/samples/*.pdf
 .DS_Store
+.build/
+.swiftpm/
+*.xcodeproj
+FlipDoc.app/
+*.xlsx
+sample_*.pdf
