@@ -30,15 +30,27 @@ public final class MenuBarController: NSObject {
         menu.addItem(headerItem)
         menu.addItem(NSMenuItem.separator())
         
-        menu.addItem(NSMenuItem(title: "Toggle Floating Drop Zone", action: #selector(toggleDropZone), keyEquivalent: "d"))
-        menu.addItem(NSMenuItem(title: "Select File to Convert...", action: #selector(openFilePicker), keyEquivalent: "o"))
-        menu.addItem(NSMenuItem(title: "Open FlipDoc Folder", action: #selector(openFolder), keyEquivalent: ""))
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit FlipDoc", action: #selector(quitApp), keyEquivalent: "q"))
+        let dropZoneItem = NSMenuItem(title: "Toggle Floating Drop Zone", action: #selector(toggleDropZone), keyEquivalent: "d")
+        dropZoneItem.target = self
+        menu.addItem(dropZoneItem)
         
-        for item in menu.items {
-            item.target = self
-        }
+        let dragModifiersItem = NSMenuItem(title: "Enable Drag Modifiers (⌘/⇧/⌃)", action: #selector(toggleDragModifiers), keyEquivalent: "")
+        dragModifiersItem.state = GlobalDragMonitor.shared.isEnabled ? .on : .off
+        dragModifiersItem.target = self
+        menu.addItem(dragModifiersItem)
+        
+        let pickerItem = NSMenuItem(title: "Select File to Convert...", action: #selector(openFilePicker), keyEquivalent: "o")
+        pickerItem.target = self
+        menu.addItem(pickerItem)
+        
+        let folderItem = NSMenuItem(title: "Open FlipDoc Folder", action: #selector(openFolder), keyEquivalent: "")
+        folderItem.target = self
+        menu.addItem(folderItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        let quitItem = NSMenuItem(title: "Quit FlipDoc", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
         
         statusItem?.menu = menu
         statusItem?.button?.performClick(nil)
@@ -47,6 +59,16 @@ public final class MenuBarController: NSObject {
     
     @objc private func toggleDropZone() {
         FloatingDropZoneWindow.shared.toggleVisibility()
+    }
+    
+    @objc private func toggleDragModifiers(_ sender: NSMenuItem) {
+        let newState = !GlobalDragMonitor.shared.isEnabled
+        GlobalDragMonitor.shared.isEnabled = newState
+        sender.state = newState ? .on : .off
+        NotificationHelper.send(
+            title: "FlipDoc",
+            subtitle: newState ? "Drag modifier keys enabled (only during drag)" : "Drag modifier keys disabled (Drop Zone only)"
+        )
     }
     
     @objc private func openFilePicker() {

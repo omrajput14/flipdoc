@@ -6,10 +6,11 @@ public final class RadialOverlayWindow: NSPanel {
     
     private var activeURL: URL?
     private var currentMode: ModifierMode = .conversions
+    private var clickOutsideMonitor: Any?
     
     public init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 400),
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
             defer: false
@@ -24,30 +25,90 @@ public final class RadialOverlayWindow: NSPanel {
         self.isMovableByWindowBackground = false
     }
     
+    public override var canBecomeKey: Bool { true }
+    
+    public override func cancelOperation(_ sender: Any?) {
+        hide()
+    }
+    
+    public override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { // ESC
+            hide()
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+    
     public func show(at screenPoint: NSPoint, for fileURL: URL, mode: ModifierMode) {
         self.activeURL = fileURL
         self.currentMode = mode
         
         let category = FileCategory.classify(url: fileURL)
-        let options = category.options(for: mode)
         
-        let fanView = RadialFanView(mode: mode, category: category, options: options) { [weak self] selected in
-            self?.executeAction(selected)
-        }
+        let fanView = RadialFanView(
+            mode: mode,
+            category: category,
+            fileName: fileURL.lastPathComponent,
+            onSelect: { [weak self] selected in
+                self?.executeAction(selected)
+            },
+            onClose: { [weak self] in
+                self?.hide()
+            },
+            onModeChange: { [weak self] newMode in
+                self?.currentMode = newMode
+            }
+        )
         
         self.contentView = NSHostingView(rootView: fanView)
         
-        let windowOrigin = NSPoint(
-            x: screenPoint.x - (frame.width / 2.0),
-            y: screenPoint.y - (frame.height / 2.0)
-        )
-        self.setFrameOrigin(windowOrigin)
+        // Position window clamped to visible screen frame so it is never clipped
+        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(screenPoint, $0.frame, false) }) ?? NSScreen.main
+        if let screen = targetScreen {
+            let visible = screen.visibleFrame
+            var origin = NSPoint(
+                x: screenPoint.x - (frame.width / 2.0),
+                y: screenPoint.y - (frame.height / 2.0)
+            )
+            origin.x = max(visible.minX + 10, min(origin.x, visible.maxX - frame.width - 10))
+            origin.y = max(visible.minY + 10, min(origin.y, visible.maxY - frame.height - 10))
+            self.setFrameOrigin(origin)
+        } else {
+            let origin = NSPoint(
+                x: screenPoint.x - (frame.width / 2.0),
+                y: screenPoint.y - (frame.height / 2.0)
+            )
+            self.setFrameOrigin(origin)
+        }
+        
         self.orderFrontRegardless()
+        
+        // Monitor clicks outside this window to dismiss
+        if clickOutsideMonitor == nil {
+            clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+                guard let self = self, self.isVisible else { return }
+                let mouse = NSEvent.mouseLocation
+                if !self.frame.contains(mouse) {
+                    DispatchQueue.main.async {
+                        self.hide()
+                    }
+                }
+            }
+        }
+    }
+    
+    public func updateMode(_ mode: ModifierMode) {
+        guard let url = activeURL, isVisible else { return }
+        show(at: NSPoint(x: frame.midX, y: frame.midY), for: url, mode: mode)
     }
     
     public func hide() {
         self.orderOut(nil)
         self.activeURL = nil
+        if let m = clickOutsideMonitor {
+            NSEvent.removeMonitor(m)
+            clickOutsideMonitor = nil
+        }
     }
     
     private func executeAction(_ option: FanOption) {
