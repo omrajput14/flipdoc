@@ -54,7 +54,8 @@ public final class RadialOverlayWindow: NSPanel {
         guard let url = activeURL else { return }
         hide()
         
-        Task {
+        // Run conversion on a high-priority background task so UI stays responsive
+        Task.detached(priority: .userInitiated) {
             do {
                 switch option.actionTag {
                 case "extract_tables":

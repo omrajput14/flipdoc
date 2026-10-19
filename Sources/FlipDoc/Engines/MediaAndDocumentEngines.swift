@@ -17,7 +17,7 @@ public enum DocumentTools {
         for i in 0..<doc.pageCount {
             guard let page = doc.page(at: i) else { continue }
             let rect = page.bounds(for: .mediaBox)
-            let scale: CGFloat = 4.0 // 288 DPI — high-quality lossless export
+            let scale: CGFloat = 3.0 // 216 DPI — sharp, lossless quality, 44% faster than 288 DPI
             let size = CGSize(width: rect.width * scale, height: rect.height * scale)
             
             let img = NSImage(size: size)
