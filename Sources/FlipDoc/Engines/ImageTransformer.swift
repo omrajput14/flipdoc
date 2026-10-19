@@ -25,7 +25,12 @@ public enum ImageTransformer {
             throw NSError(domain: "FlipDoc", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create image destination."])
         }
         
-        CGImageDestinationAddImage(destination, cgImage, nil)
+        // Maximum quality: lossless for PNG/TIFF, highest quality for JPEG/WebP
+        let props: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: 1.0,  // 1.0 = maximum (no quality loss)
+            kCGImageDestinationEmbedThumbnail: false
+        ]
+        CGImageDestinationAddImage(destination, cgImage, props as CFDictionary)
         guard CGImageDestinationFinalize(destination) else {
             throw NSError(domain: "FlipDoc", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to write transformed image."])
         }

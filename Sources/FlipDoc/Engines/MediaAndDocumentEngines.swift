@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import PDFKit
 import AVFoundation
+import UniformTypeIdentifiers
 
 public enum DocumentTools {
     /// PDF -> High-resolution PNG images for each page
@@ -16,7 +17,7 @@ public enum DocumentTools {
         for i in 0..<doc.pageCount {
             guard let page = doc.page(at: i) else { continue }
             let rect = page.bounds(for: .mediaBox)
-            let scale: CGFloat = 2.0 // 144 DPI
+            let scale: CGFloat = 4.0 // 288 DPI — high-quality lossless export
             let size = CGSize(width: rect.width * scale, height: rect.height * scale)
             
             let img = NSImage(size: size)
@@ -73,35 +74,39 @@ public enum DocumentTools {
         return outURL
     }
     
-    /// Images / Text -> PDF
+    /// Images / Text / Spreadsheet → PDF
     public static func createPDF(from inputURL: URL) throws -> URL {
         let outURL = inputURL.deletingPathExtension().appendingPathExtension("pdf")
         let ext = inputURL.pathExtension.lowercased()
         
         if ["png", "jpg", "jpeg", "webp", "heic", "tiff", "bmp", "gif"].contains(ext) {
-            guard let image = NSImage(contentsOf: inputURL) else {
+            // High-quality image → PDF at native CGImage resolution (no downscale)
+            guard let source = CGImageSourceCreateWithURL(inputURL as CFURL, nil),
+                  let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
                 throw NSError(domain: "FlipDoc", code: 12, userInfo: [NSLocalizedDescriptionKey: "Failed to load image."])
             }
+            let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
             let pdfDoc = PDFDocument()
             if let page = PDFPage(image: image) {
                 pdfDoc.insert(page, at: 0)
                 pdfDoc.write(to: outURL)
                 return outURL
             }
-        } else {
-            // Text to PDF via textutil
+        } else if ["xlsx", "xls"].contains(ext) {
+            // Spreadsheet → proper table-rendered PDF
+            return try XLSXtoPDFEngine.convert(inputURL: inputURL, outputURL: outURL)
+        } else if ["csv", "tsv"].contains(ext) {
+            return try XLSXtoPDFEngine.convertDelimited(inputURL: inputURL, outputURL: outURL)
+        } else if ["txt", "md", "rtf", "docx", "doc"].contains(ext) {
+            // Text → PDF via native macOS textutil (preserves fonts & formatting)
             let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/sbin/cupsfilter")
-            // fallback
-            let pdfDoc = PDFDocument()
-            let content = (try? String(contentsOf: inputURL)) ?? ""
-            let page = PDFPage()
-            pdfDoc.insert(page, at: 0)
-            let textURL = inputURL.deletingPathExtension().appendingPathExtension("pdf")
-            try content.write(to: textURL, atomically: true, encoding: .utf8)
-            return textURL
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/textutil")
+            proc.arguments = ["-convert", "pdf", inputURL.path, "-output", outURL.path]
+            try proc.run()
+            proc.waitUntilExit()
+            if FileManager.default.fileExists(atPath: outURL.path) { return outURL }
         }
-        throw NSError(domain: "FlipDoc", code: 13, userInfo: [NSLocalizedDescriptionKey: "Conversion to PDF failed."])
+        throw NSError(domain: "FlipDoc", code: 13, userInfo: [NSLocalizedDescriptionKey: "Conversion to PDF not supported for this file type."])
     }
     
     /// Split PDF into individual pages
