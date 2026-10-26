@@ -38,4 +38,4 @@ swift build -c release
 ---
 
 ## 📋 Documentation
-See [`PRD.md`](./PRD.md) for complete technical architecture, conversion matrix, and roadmap.
+See [`PRD.md`](./PRD.md) for complete technical architecture, conversion matrix, and roadmap
