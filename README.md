@@ -1,4 +1,4 @@
-# FlipDoc for Mac 🍊📄
+# FlipDoc for Mac 
 
 > **The zero-click offline document & file transformer.**  
 > Drag a file, tap `Shift` to convert, `Command` for document tools, or `Control` for quick actions. Everything runs 100% locally on your Mac.
