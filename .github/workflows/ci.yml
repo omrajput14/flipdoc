@@ -1,0 +1,27 @@
+name: macOS Build & Test
+
+on:
+  push:
+    branches: [ main, "feat/**" ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    name: Swift 6 Build & Test (macOS)
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show Swift toolchain version
+        run: swift --version
+
+      - name: Build FlipDoc debug targets
+        run: swift build
+
+      - name: Run FlipDocTests suite
+        run: swift test
+
+      - name: Package FlipDoc.app release bundle
+        run: ./Scripts/build-app.sh

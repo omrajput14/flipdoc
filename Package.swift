@@ -1,12 +1,23 @@
 // swift-tools-version: 6.0
 import PackageDescription
+import Foundation
+
+let cltTestingPluginPath = "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing"
+var testSwiftSettings: [SwiftSetting] = []
+if FileManager.default.fileExists(atPath: cltTestingPluginPath) {
+    testSwiftSettings.append(.unsafeFlags(["-plugin-path", cltTestingPluginPath]))
+}
 
 let package = Package(
     name: "FlipDoc",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v14)
     ],
     products: [
+        .library(
+            name: "FlipDocCore",
+            targets: ["FlipDocCore"]
+        ),
         .executable(
             name: "FlipDoc",
             targets: ["FlipDoc"]
@@ -14,16 +25,21 @@ let package = Package(
     ],
     dependencies: [],
     targets: [
+        .target(
+            name: "FlipDocCore",
+            dependencies: [],
+            path: "Sources/FlipDocCore"
+        ),
         .executableTarget(
             name: "FlipDoc",
-            dependencies: [],
-            path: "Sources/FlipDoc",
-            resources: []
+            dependencies: ["FlipDocCore"],
+            path: "Sources/FlipDoc"
         ),
         .testTarget(
             name: "FlipDocTests",
-            dependencies: ["FlipDoc"],
-            path: "Tests/FlipDocTests"
+            dependencies: ["FlipDocCore"],
+            path: "Tests/FlipDocTests",
+            swiftSettings: testSwiftSettings
         )
     ]
 )
