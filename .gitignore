@@ -6,3 +6,4 @@ FlipDoc.app/
 *.xlsx
 sample_*.pdf
 MELD.app/
+dist/
