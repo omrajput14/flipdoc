@@ -97,7 +97,52 @@ struct DocumentAndTableTests {
         let splitPages = try FileManager.default.contentsOfDirectory(atPath: splitFolder.path)
         #expect(splitPages.count == 2)
 
-        let compressedPDF = try DocumentTools.compressPDF(inputURL: mergedPDF, quality: 0.55)
+        let compressedPDF = try DocumentTools.compressPDF(inputURL: mergedPDF, quality: 0.55, targetMaxBytes: 250 * 1024)
         #expect(PDFDocument(url: compressedPDF)?.pageCount == 2)
+        let compressedBytes = (try? Data(contentsOf: compressedPDF).count) ?? 0
+        #expect(compressedBytes > 0 && compressedBytes <= 250 * 1024)
+
+        // 3-up Study Handout PDF (4 pages -> 2 study handout sheets)
+        let fourPagePDF = try DocumentTools.mergePDFs(inputURLs: [mergedPDF, mergedPDF])
+        #expect(PDFDocument(url: fourPagePDF)?.pageCount == 4)
+        let handoutPDF = try DocumentTools.createStudyHandoutPDF(inputURL: fourPagePDF, slidesPerPage: 3)
+        #expect(PDFDocument(url: handoutPDF)?.pageCount == 2)
+
+        // PDF Lock (AES Password Protection) + Diagonal Stamp Watermark
+        let watermarkedOnly = try DocumentTools.protectAndWatermarkPDF(
+            inputURL: mergedPDF,
+            userPassword: nil,
+            watermarkText: "CONFIDENTIAL"
+        )
+        #expect(PDFDocument(url: watermarkedOnly)?.isLocked == false)
+        #expect(PDFDocument(url: watermarkedOnly)?.pageCount == 2)
+
+        let lockedPDF = try DocumentTools.protectAndWatermarkPDF(
+            inputURL: mergedPDF,
+            userPassword: "secret123",
+            watermarkText: "CONFIDENTIAL"
+        )
+        let lockedDoc = PDFDocument(url: lockedPDF)
+        #expect(lockedDoc?.isLocked == true)
+        #expect(lockedDoc?.unlock(withPassword: "secret123") == true)
+        #expect(lockedDoc?.pageCount == 2)
+
+        // Permanent PII Redaction Engine on PDF
+        let piiNote = dir.appendingPathComponent("contract_pii.txt")
+        try "Contact alice@flipdoc.app or call +1 555-234-5678 regarding Invoice $4,500.00".write(to: piiNote, atomically: true, encoding: .utf8)
+        let piiPDF = try DocumentTools.createPDF(from: [piiNote])
+
+        let previewMatches = try await RedactionEngine.previewMatches(in: piiPDF, options: RedactionOptions())
+        #expect(previewMatches.contains(where: { $0.contains("alice@flipdoc.app") }))
+
+        let redactedResult = try await RedactionEngine.applyRedaction(
+            inputURL: piiPDF,
+            options: RedactionOptions(redactEmails: true, redactPhones: true, redactAmounts: true)
+        )
+        #expect(redactedResult.redactedCount >= 2)
+        #expect(FileManager.default.fileExists(atPath: redactedResult.outputURL.path))
+        // Rasterized redacted PDF must have zero selectable raw email text remaining
+        let postRedactionText = PDFDocument(url: redactedResult.outputURL)?.string ?? ""
+        #expect(!postRedactionText.contains("alice@flipdoc.app"))
     }
 }

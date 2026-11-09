@@ -83,6 +83,18 @@ public final class ActionDispatcher: NSObject, NSSharingServiceDelegate {
             ToolOptionsWindowController.shared.showMetadataInspector(urls: validURLs)
             return
 
+        case "tool_protect_pdf":
+            ToolOptionsWindowController.shared.showProtectPDF(urls: validURLs)
+            return
+
+        case "tool_redact":
+            ToolOptionsWindowController.shared.showRedact(urls: validURLs)
+            return
+
+        case "scan_qr":
+            runQRScanInteractive(validURLs)
+            return
+
         case "ocr_full":
             runOCRInteractive(validURLs)
             return
@@ -188,10 +200,14 @@ public final class ActionDispatcher: NSObject, NSSharingServiceDelegate {
                 out = try await ImageTransformer.convert(inputURL: url, toFormat: "bmp")
             case "strip_exif":
                 out = try ImageTransformer.stripMetadata(inputURL: url)
+            case "remove_bg":
+                out = try await ImageTransformer.removeBackground(inputURL: url)
 
             // PDF & Document exports
             case "to_pdf":
                 out = try DocumentTools.createPDF(from: [url])
+            case "pdf_handout":
+                out = try DocumentTools.createStudyHandoutPDF(inputURL: url)
             case "extract_tables":
                 let tables = try PDFTableExtractor.extractTables(from: url)
                 let dest = OutputNaming.uniqueFileURL(nextTo: url, newExtension: "xlsx")
@@ -311,6 +327,40 @@ public final class ActionDispatcher: NSObject, NSSharingServiceDelegate {
                 ToolOptionsWindowController.shared.showOCRResult(text: combined, sourceURL: first)
             } catch {
                 OperationProgressHUD.shared.showError(title: "OCR Failed", message: error.localizedDescription)
+            }
+        }
+    }
+
+    private func runQRScanInteractive(_ urls: [URL]) {
+        let first = urls[0]
+        OperationProgressHUD.shared.showProgress(
+            title: "Scanning QR & Barcodes",
+            subtitle: "Inspecting \(first.lastPathComponent)…"
+        )
+        Task { @MainActor in
+            do {
+                var allPayloads: [String] = []
+                for url in urls {
+                    let found = try await VisionOCREngine.shared.detectBarcodes(from: url)
+                    for item in found where !allPayloads.contains(item) {
+                        allPayloads.append(item)
+                    }
+                }
+                if allPayloads.isEmpty {
+                    OperationProgressHUD.shared.showError(
+                        title: "No QR or Barcode Found",
+                        message: "No readable QR code or barcode was detected in \(first.lastPathComponent)."
+                    )
+                    return
+                }
+                let joined = allPayloads.joined(separator: "\n")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(joined, forType: .string)
+                SoundAndHaptics.shared.playCompletion()
+                OperationProgressHUD.shared.dismiss()
+                ToolOptionsWindowController.shared.showQRResult(payloads: allPayloads, sourceURL: first)
+            } catch {
+                OperationProgressHUD.shared.showError(title: "QR Scan Failed", message: error.localizedDescription)
             }
         }
     }

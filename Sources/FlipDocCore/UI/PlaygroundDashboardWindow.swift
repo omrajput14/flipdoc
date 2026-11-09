@@ -286,7 +286,7 @@ public struct PlaygroundDashboardView: View {
                     mode: .tools,
                     keyName: "⌘ Command",
                     title: "Quick Tools",
-                    detail: "Compress · Resize · OCR · Split/Merge · Mute"
+                    detail: "Remove BG · Handout · Redact · Lock · Scan QR · Compress"
                 )
                 liveKeycapCard(
                     mode: .actions,
