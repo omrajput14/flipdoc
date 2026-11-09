@@ -43,14 +43,14 @@ Drag any file in Finder (or from any app), tap a modifier key, glide onto a radi
 
 ```bash
 # Clone repository
-git clone https://github.com/omrajput14/flipdoc.git
-cd flipdoc
+git clone https://github.com/meld-app/meld-mac.git
+cd meld-mac
 
-# Package & sign FlipDoc.app (release build + generated AppIcon.icns)
+# Package & sign MELD.app (release build + generated AppIcon.icns)
 make app
 
-# Launch FlipDoc
-open FlipDoc.app
+# Launch MELD
+open MELD.app
 ```
 
 ### Run Automated Test Suite
