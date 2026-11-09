@@ -341,28 +341,13 @@ public struct PlaygroundDashboardView: View {
 
     private var topNavigationBar: some View {
         HStack(alignment: .center, spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [FlipDocTheme.orange, FlipDocTheme.warmOrange],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 42, height: 42)
-                    .shadow(color: FlipDocTheme.orange.opacity(0.32), radius: 8, x: 0, y: 4)
-
-                Image(systemName: "circle.hexagongrid.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.white)
-            }
+            MeldBrandMarkView(size: 46)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
                     Text("MELD")
                         .font(.system(size: 21, weight: .bold, design: .rounded))
-                    Text("LOCAL · ZERO-CLOUD")
+                    Text("TRANSFORM · CONVERT · ORGANIZE")
                         .font(.system(size: 9.5, weight: .bold, design: .rounded))
                         .tracking(0.6)
                         .foregroundStyle(FlipDocTheme.orange)

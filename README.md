@@ -1,8 +1,25 @@
-# MELD (formerly FlipDoc)
+<p align="center">
+  <img src="Assets/MELDLogo.png" alt="MELD Logo" width="168" />
+</p>
 
-**The zero-click offline file converter, studio toolkit, and floating file shelf — 100% local & offline.**
+<h1 align="center">MELD for macOS</h1>
+<p align="center"><strong>TRANSFORM • CONVERT • ORGANIZE — 100% Local &amp; Offline</strong></p>
 
 Drag any file in Finder (or from any app), tap a modifier key, glide onto a radial petal around your cursor, and release. **MELD** converts documents, spreadsheets, images, audio, video, subtitles, and archives right beside your original file in milliseconds — with **zero cloud uploads** and **zero Accessibility permissions** required.
+
+---
+
+## Download Beta Installer (`.dmg`)
+
+Before our official Mac App Store release, you can download and test the latest signed `.dmg` installer directly from [**GitHub Releases**](https://github.com/meld-app/meld-mac/releases):
+
+1. Download **`MELD-v2.1.0-beta.1-macOS.dmg`** from [Releases](https://github.com/meld-app/meld-mac/releases).
+2. Open the `.dmg` and drag **`MELD.app`** into **`Applications`**.
+3. On first launch (pre-App-Store beta), **Right-click → Open** on `MELD.app`, or run in Terminal:
+   ```bash
+   xattr -cr /Applications/MELD.app && open /Applications/MELD.app
+   ```
+4. Found a bug or want to request a tool? [Open an Issue](https://github.com/meld-app/meld-mac/issues/new/choose).
 
 ---
 
@@ -43,14 +60,14 @@ Drag any file in Finder (or from any app), tap a modifier key, glide onto a radi
 
 ```bash
 # Clone repository
-git clone https://github.com/omrajput14/flipdoc.git
-cd flipdoc
+git clone https://github.com/meld-app/meld-mac.git
+cd meld-mac
 
-# Package & sign FlipDoc.app (release build + generated AppIcon.icns)
+# Package & sign MELD.app (release build + generated AppIcon.icns)
 make app
 
-# Launch FlipDoc
-open FlipDoc.app
+# Launch MELD
+open MELD.app
 ```
 
 ### Run Automated Test Suite
@@ -92,6 +109,15 @@ See [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md) and [Docs/PRD.md](Docs/PRD.md) 
 
 ---
 
+## Policies & Governance
+
+- [**Privacy Policy (`PRIVACY.md`)**](PRIVACY.md) — 100% on-device execution, zero cloud uploads, zero analytics/telemetry.
+- [**Security Policy (`SECURITY.md`)**](SECURITY.md) — Non-destructive sibling outputs & permanent pixel-level PII redaction.
+- [**Contributing & Beta Testing (`CONTRIBUTING.md`)**](CONTRIBUTING.md) — How to test `.dmg` releases, report bugs, and build from source.
+- [**Product Roadmap (`Docs/ROADMAP.md`)**](Docs/ROADMAP.md) & [**Engine Architecture (`Docs/ADR-001-CROSS-PLATFORM-ENGINE.md`)**](Docs/ADR-001-CROSS-PLATFORM-ENGINE.md).
+
+---
+
 ## License
 
-MIT
+[MIT License](LICENSE) — Copyright (c) 2026 MELD (`meld-app`) & Om Rajput.

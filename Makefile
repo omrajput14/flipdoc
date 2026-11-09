@@ -1,4 +1,4 @@
-.PHONY: build test app run clean
+.PHONY: build test app dmg run clean
 
 build:
 	swift build
@@ -9,9 +9,12 @@ test:
 app:
 	./Scripts/build-app.sh
 
+dmg:
+	./Scripts/build-dmg.sh
+
 run: app
-	open FlipDoc.app
+	open MELD.app --args --studio
 
 clean:
 	swift package clean
-	rm -rf .build FlipDoc.app
+	rm -rf .build FlipDoc.app MELD.app dist

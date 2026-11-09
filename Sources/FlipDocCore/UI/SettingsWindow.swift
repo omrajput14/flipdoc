@@ -11,18 +11,11 @@ public struct SettingsView: View {
         VStack(alignment: .leading, spacing: 18) {
             // Header
             HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(FlipDocTheme.orange)
-                        .frame(width: 40, height: 40)
-                    Image(systemName: "circle.hexagongrid.fill")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
-                }
+                MeldBrandMarkView(size: 42)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("MELD Settings")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
-                    Text("Zero-click local file conversions & studio tools — 100% offline on Mac")
+                    Text("TRANSFORM · CONVERT · ORGANIZE — 100% offline on Mac")
                         .font(.system(size: 11.5, design: .rounded))
                         .foregroundStyle(.secondary)
                 }

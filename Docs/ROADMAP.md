@@ -11,8 +11,8 @@ Creating a dedicated GitHub Organization (e.g. `meld-hq` / `meld-app`) allows cl
 
 ```mermaid
 flowchart TD
-    Org["GitHub Organization (e.g. github.com/meld-hq)"]
-    Org --> Mac["meld-macos (Transferred from flipdoc — preserves full Git history)"]
+    Org["GitHub Organization (github.com/meld-app)"]
+    Org --> Mac["meld-mac (Native macOS Swift 6 App — Radial Wheel, Float Shelf, Vision/PDFKit HAL)"]
     Org --> Core["meld-core (Shared Rust Engine + UniFFI bindings)"]
     Org --> Win["meld-windows (Native Windows App — WinUI 3 + Explorer Shell + Radial Wheel)"]
     Org --> And["meld-android (Kotlin + Jetpack Compose + Android Share Sheet Target)"]
