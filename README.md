@@ -1,8 +1,8 @@
-# FlipDoc for Mac
+# MELD (formerly FlipDoc)
 
-**Zero-click radial file converter, studio toolkit, and floating file shelf for macOS — 100% local & offline.**
+**The zero-click offline file converter, studio toolkit, and floating file shelf — 100% local & offline.**
 
-Drag any file in Finder (or from any macOS app), tap a modifier key, glide onto a radial petal around your cursor, and release. FlipDoc converts documents, spreadsheets, images, audio, video, subtitles, and archives right beside your original file in milliseconds — with **zero cloud uploads** and **zero Accessibility permissions** required.
+Drag any file in Finder (or from any app), tap a modifier key, glide onto a radial petal around your cursor, and release. **MELD** converts documents, spreadsheets, images, audio, video, subtitles, and archives right beside your original file in milliseconds — with **zero cloud uploads** and **zero Accessibility permissions** required.
 
 ---
 

@@ -118,4 +118,8 @@ rm -rf "$TMP_ICON_DIR"
 echo "==> Code-signing ${APP_NAME}.app (ad-hoc)..."
 codesign --force --deep --sign - "$APP_BUNDLE"
 
-echo "==> Built ${APP_BUNDLE}"
+rm -rf "${ROOT_DIR}/MELD.app"
+cp -R "$APP_BUNDLE" "${ROOT_DIR}/MELD.app"
+codesign --force --deep --sign - "${ROOT_DIR}/MELD.app"
+
+echo "==> Built ${ROOT_DIR}/MELD.app (and ${APP_BUNDLE})"

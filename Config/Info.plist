@@ -7,9 +7,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.omrajput.FlipDoc</string>
     <key>CFBundleName</key>
-    <string>FlipDoc</string>
+    <string>MELD</string>
     <key>CFBundleDisplayName</key>
-    <string>FlipDoc</string>
+    <string>MELD</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>

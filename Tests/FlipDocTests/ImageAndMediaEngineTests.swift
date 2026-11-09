@@ -122,12 +122,18 @@ struct ImageAndMediaEngineTests {
         let monoURL = try MediaConverter.convertAudio(inputURL: m4aURL, format: "m4a", forceMono: true)
         #expect(FileManager.default.fileExists(atPath: monoURL.path))
 
-        // 3. Video: generate a 0.5s MP4 via AVAssetWriter, then test MOV, GIF, Mute & Snapshots
+        let waveformPNG = try await MediaConverter.generateAudioWaveformPNG(inputURL: wavURL)
+        #expect(FileManager.default.fileExists(atPath: waveformPNG.path))
+
+        // 3. Video: generate a 0.5s MP4 via AVAssetWriter, then test MOV, GIF, Mute, 2x Speed & Snapshots
         let mp4URL = dir.appendingPathComponent("clip.mp4")
         try makeTinyMP4(at: mp4URL)
 
         let movURL = try await MediaConverter.convertVideo(inputURL: mp4URL, toFormat: "mov")
         #expect(FileManager.default.fileExists(atPath: movURL.path))
+
+        let speedURL = try await MediaConverter.changeVideoSpeed(inputURL: mp4URL, speedMultiplier: 2.0)
+        #expect(FileManager.default.fileExists(atPath: speedURL.path))
 
         let gifURL = try await MediaConverter.videoToAnimatedGIF(inputURL: mp4URL, fps: 6, maxWidth: 240)
         #expect(FileManager.default.fileExists(atPath: gifURL.path))
