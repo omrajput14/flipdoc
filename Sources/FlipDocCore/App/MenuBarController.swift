@@ -55,11 +55,11 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
         if let button = statusItem.button {
             let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
-            let image = NSImage(systemSymbolName: "circle.hexagongrid.fill", accessibilityDescription: "FlipDoc")?
+            let image = NSImage(systemSymbolName: "circle.hexagongrid.fill", accessibilityDescription: "MELD")?
                 .withSymbolConfiguration(config)
             image?.isTemplate = true
             button.image = image
-            button.toolTip = "FlipDoc — Drag any file & tap ⇧ Shift, ⌘ Cmd, or ⌃ Ctrl"
+            button.toolTip = "MELD — Drag any file & tap ⇧ Shift, ⌘ Cmd, or ⌃ Ctrl"
 
             let dropOverlay = StatusBarDropOverlayView(frame: button.bounds)
             dropOverlay.autoresizingMask = [.width, .height]
@@ -89,8 +89,8 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
         let header = NSMenuItem(
             title: prefs.dragModifiersEnabled
-                ? "FlipDoc Ready — Drag + ⇧ / ⌘ / ⌃"
-                : "FlipDoc Paused (Modifiers Disabled)",
+                ? "MELD Ready — Drag + ⇧ / ⌘ / ⌃"
+                : "MELD Paused (Modifiers Disabled)",
             action: nil,
             keyEquivalent: ""
         )
@@ -98,7 +98,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         statusMenu.addItem(header)
         statusMenu.addItem(.separator())
 
-        let studioItem = NSMenuItem(title: "Open FlipDoc Studio…", action: #selector(openStudio), keyEquivalent: "o")
+        let studioItem = NSMenuItem(title: "Open MELD Studio…", action: #selector(openStudio), keyEquivalent: "o")
         studioItem.target = self
         statusMenu.addItem(studioItem)
 
@@ -159,7 +159,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         settingsItem.target = self
         statusMenu.addItem(settingsItem)
 
-        let quitItem = NSMenuItem(title: "Quit FlipDoc", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit MELD", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         statusMenu.addItem(quitItem)
     }

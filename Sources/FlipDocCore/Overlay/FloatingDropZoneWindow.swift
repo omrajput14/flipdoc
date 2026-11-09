@@ -97,7 +97,7 @@ public struct FloatingDropZoneView: View {
                 }
 
                 VStack(spacing: 3) {
-                    Text("FlipDoc Drop Zone")
+                    Text("MELD Drop Zone")
                         .font(.system(size: 13.5, weight: .semibold, design: .rounded))
                     Text(viewModel.statusText)
                         .font(.system(size: 11, weight: .regular, design: .rounded))

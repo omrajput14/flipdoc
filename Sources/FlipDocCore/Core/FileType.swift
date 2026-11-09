@@ -290,15 +290,17 @@ public enum FileCategory: String, Sendable {
                 return [
                     FanOption(id: "tool_vid_compress", wheelTitle: "COMPRESS", label: "Compress Video", systemImage: "arrow.down.right.and.arrow.up.left", actionTag: "compress_video", showsPetalIcon: true),
                     FanOption(id: "tool_vid_mute", wheelTitle: "MUTE", label: "Remove Audio Track", systemImage: "speaker.slash.fill", actionTag: "mute_video", showsPetalIcon: true),
+                    FanOption(id: "tool_vid_speed", wheelTitle: "SPEED 2X", label: "Speed Up Video (2x)", systemImage: "gauge.with.dots.needle.67percent", actionTag: "video_speed_2x", showsPetalIcon: true),
                     FanOption(id: "tool_vid_snap", wheelTitle: "SNAPSHOTS", label: "Save Video Snapshots", systemImage: "camera", actionTag: "video_snapshots", showsPetalIcon: true),
                     FanOption(id: "tool_vid_gif", wheelTitle: "MAKE GIF", label: "Create GIF Preview", systemImage: "play.square.stack", actionTag: "to_gif", showsPetalIcon: true)
                 ]
 
             case .audio:
                 return [
-                    FanOption(id: "tool_aud_mono", wheelTitle: "MONO", label: "Convert to Mono", systemImage: "hifispeaker", actionTag: "audio_mono", showsPetalIcon: true),
                     FanOption(id: "tool_aud_compress", wheelTitle: "COMPRESS", label: "Compress Audio (AAC)", systemImage: "arrow.down.right.and.arrow.up.left", actionTag: "to_m4a", showsPetalIcon: true),
-                    FanOption(id: "tool_aud_zip", wheelTitle: "ZIP", label: "Pack into ZIP", systemImage: "archivebox", actionTag: "to_zip", showsPetalIcon: true)
+                    FanOption(id: "tool_aud_vis", wheelTitle: "VISUALIZE", label: "Render Waveform PNG", systemImage: "waveform.badge.plus", actionTag: "audio_visualize", showsPetalIcon: true),
+                    FanOption(id: "tool_aud_mono", wheelTitle: "CHANNELS", label: "Convert to Mono", systemImage: "hifispeaker", actionTag: "audio_mono", showsPetalIcon: true),
+                    FanOption(id: "tool_aud_zip", wheelTitle: "ARCHIVE", label: "Pack into ZIP", systemImage: "archivebox", actionTag: "to_zip", showsPetalIcon: true)
                 ]
 
             case .archive:

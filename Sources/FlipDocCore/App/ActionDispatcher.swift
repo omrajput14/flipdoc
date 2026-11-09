@@ -268,6 +268,8 @@ public final class ActionDispatcher: NSObject, NSSharingServiceDelegate {
                 out = try await MediaConverter.convertVideo(inputURL: url, toFormat: "mp4", compress: true)
             case "mute_video":
                 out = try await MediaConverter.muteVideo(inputURL: url)
+            case "video_speed_2x":
+                out = try await MediaConverter.changeVideoSpeed(inputURL: url, speedMultiplier: 2.0)
             case "video_snapshots":
                 out = try await MediaConverter.saveVideoSnapshots(inputURL: url)
 
@@ -280,6 +282,8 @@ public final class ActionDispatcher: NSObject, NSSharingServiceDelegate {
                 out = try MediaConverter.convertAudio(inputURL: url, format: "aiff")
             case "to_flac":
                 out = try MediaConverter.convertAudio(inputURL: url, format: "flac")
+            case "audio_visualize":
+                out = try await MediaConverter.generateAudioWaveformPNG(inputURL: url)
             case "audio_mono":
                 let ext = ["m4a", "wav", "aiff", "flac"].contains(url.pathExtension.lowercased()) ? url.pathExtension.lowercased() : "m4a"
                 out = try MediaConverter.convertAudio(inputURL: url, format: ext, forceMono: true)

@@ -20,9 +20,9 @@ public struct SettingsView: View {
                         .foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("FlipDoc Settings")
+                    Text("MELD Settings")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
-                    Text("Zero-click local file conversions & tools — 100% offline on Mac")
+                    Text("Zero-click local file conversions & studio tools — 100% offline on Mac")
                         .font(.system(size: 11.5, design: .rounded))
                         .foregroundStyle(.secondary)
                 }
@@ -57,7 +57,7 @@ public struct SettingsView: View {
                     )
                     Divider()
                     settingToggleRow(
-                        title: "Launch FlipDoc at Login",
+                        title: "Launch MELD at Login",
                         subtitle: "Start quietly in the macOS menu bar when you sign in",
                         isOn: Binding(
                             get: { prefs.launchAtLoginEnabled },
@@ -174,7 +174,7 @@ public final class SettingsWindowController {
         if window == nil {
             let host = NSHostingController(rootView: SettingsView())
             let w = NSWindow(contentViewController: host)
-            w.title = "FlipDoc Settings"
+            w.title = "MELD Settings"
             w.styleMask = [.titled, .closable, .fullSizeContentView]
             w.titlebarAppearsTransparent = true
             w.isMovableByWindowBackground = true

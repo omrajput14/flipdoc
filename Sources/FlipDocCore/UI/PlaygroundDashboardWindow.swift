@@ -1,55 +1,68 @@
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
+import PDFKit
 import Combine
 
-/// Generates lightweight local sample files in `~/Library/Caches/FlipDocPlayground` so users can immediately drag or click to test the wheel!
+/// Generates ready-to-drag sample files inside `~/Library/Application Support/FlipDoc/Samples/`
+/// so users can immediately test Image, PDF, Audio, Spreadsheet, Subtitle, and QR workflows inside MELD Studio.
 @MainActor
-enum SamplePlaygroundFiles {
-    struct SampleCard: Identifiable {
-        let id: String
-        let title: String
-        let badge: String
-        let icon: String
-        let url: URL
+public enum SamplePlaygroundFiles {
+    public struct SampleCard: Identifiable {
+        public let id: String
+        public let title: String
+        public let badge: String
+        public let icon: String
+        public let category: FileCategory
+        public let url: URL
     }
 
-    static func prepareSamples() -> [SampleCard] {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("FlipDocPlaygroundSamples", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    public static func prepareSamples() -> [SampleCard] {
+        let fm = FileManager.default
+        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fm.temporaryDirectory
+        let folder = appSupport.appendingPathComponent("FlipDoc/Samples", isDirectory: true)
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
 
         var cards: [SampleCard] = []
 
-        // 1. Sample PNG Image
-        let pngURL = folder.appendingPathComponent("Studio Poster.png")
-        if !FileManager.default.fileExists(atPath: pngURL.path) {
-            createSamplePosterPNG(at: pngURL)
+        // 1. Sample Image (`landscape.png`)
+        let imgURL = folder.appendingPathComponent("landscape.png")
+        if !fm.fileExists(atPath: imgURL.path) {
+            createSamplePosterPNG(at: imgURL)
         }
-        cards.append(SampleCard(id: "png", title: "Studio Poster.png", badge: "IMAGE", icon: "photo.fill", url: pngURL))
+        cards.append(SampleCard(id: "img", title: "landscape.png", badge: "IMAGE", icon: "photo.fill", category: .image, url: imgURL))
 
-        // 2. Sample PDF Invoice
-        let pdfURL = folder.appendingPathComponent("Quarterly Invoice.pdf")
-        if !FileManager.default.fileExists(atPath: pdfURL.path) {
+        // 2. Sample PDF with Table + PII (`field-notes.pdf`)
+        let pdfURL = folder.appendingPathComponent("field-notes.pdf")
+        if !fm.fileExists(atPath: pdfURL.path) {
             createSampleInvoicePDF(at: pdfURL)
         }
-        cards.append(SampleCard(id: "pdf", title: "Quarterly Invoice.pdf", badge: "PDF TABLE", icon: "doc.richtext.fill", url: pdfURL))
+        cards.append(SampleCard(id: "pdf", title: "field-notes.pdf", badge: "PDF", icon: "doc.richtext.fill", category: .pdf, url: pdfURL))
 
-        // 3. Sample Spreadsheet CSV
-        let csvURL = folder.appendingPathComponent("Revenue Metrics.csv")
-        if !FileManager.default.fileExists(atPath: csvURL.path) {
+        // 3. Sample Audio (`mixtape.wav`)
+        let wavURL = folder.appendingPathComponent("mixtape.wav")
+        if !fm.fileExists(atPath: wavURL.path) {
+            createSampleAudioWAV(at: wavURL)
+        }
+        cards.append(SampleCard(id: "audio", title: "mixtape.wav", badge: "AUDIO", icon: "waveform", category: .audio, url: wavURL))
+
+        // 4. Sample CSV Spreadsheet (`revenue-metrics.csv`)
+        let csvURL = folder.appendingPathComponent("revenue-metrics.csv")
+        if !fm.fileExists(atPath: csvURL.path) {
             let csv = """
-            Month,Plan,MRR,Growth
-            January,Pro Studio,"$14,200",+18%
-            February,Pro Studio,"$16,850",+19%
-            March,Enterprise,"$22,400",+33%
+            Quarter,Region,Product,ARR,YoY Growth
+            Q1 2026,"North America, West",MELD Pro,"$142,500",+38%
+            Q2 2026,"Europe, UK",MELD Teams,"$198,000",+44%
+            Q3 2026,"Asia Pacific",MELD Enterprise,"$264,900",+52%
             """
             try? csv.write(to: csvURL, atomically: true, encoding: .utf8)
         }
-        cards.append(SampleCard(id: "csv", title: "Revenue Metrics.csv", badge: "SHEET", icon: "tablecells.fill", url: csvURL))
+        cards.append(SampleCard(id: "csv", title: "revenue-metrics.csv", badge: "SHEET", icon: "tablecells.fill", category: .spreadsheet, url: csvURL))
 
-        // 4. Sample SRT Subtitle
-        let srtURL = folder.appendingPathComponent("Keynote Captions.srt")
-        if !FileManager.default.fileExists(atPath: srtURL.path) {
+        // 5. Sample SRT Subtitle (`captions.srt`)
+        let srtURL = folder.appendingPathComponent("captions.srt")
+        if !fm.fileExists(atPath: srtURL.path) {
             let srt = """
             1
             00:00:01,000 --> 00:00:03,800
@@ -61,7 +74,14 @@ enum SamplePlaygroundFiles {
             """
             try? srt.write(to: srtURL, atomically: true, encoding: .utf8)
         }
-        cards.append(SampleCard(id: "srt", title: "Keynote Captions.srt", badge: "SUBTITLE", icon: "captions.bubble.fill", url: srtURL))
+        cards.append(SampleCard(id: "srt", title: "captions.srt", badge: "SUBTITLE", icon: "captions.bubble.fill", category: .subtitle, url: srtURL))
+
+        // 6. Sample QR Code (`event-pass-qr.png`)
+        let qrURL = folder.appendingPathComponent("event-pass-qr.png")
+        if !fm.fileExists(atPath: qrURL.path) {
+            _ = try? ImageTransformer.generateQRCode(payload: "https://github.com/omrajput14/flipdoc", outputURL: qrURL, size: 420)
+        }
+        cards.append(SampleCard(id: "qr", title: "event-pass-qr.png", badge: "QR IMAGE", icon: "qrcode.viewfinder", category: .image, url: qrURL))
 
         return cards
     }
@@ -87,14 +107,14 @@ enum SamplePlaygroundFiles {
         ctx.fillEllipse(in: CGRect(x: 260, y: 180, width: 280, height: 280))
 
         let str = NSAttributedString(
-            string: "FLIPDOC LOCAL STUDIO",
+            string: "MELD LOCAL STUDIO",
             attributes: [
                 .font: NSFont.boldSystemFont(ofSize: 34),
                 .foregroundColor: NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.13, alpha: 1)
             ]
         )
         let line = CTLineCreateWithAttributedString(str)
-        ctx.textPosition = CGPoint(x: 195, y: 95)
+        ctx.textPosition = CGPoint(x: 225, y: 95)
         CTLineDraw(line, ctx)
 
         if let cg = ctx.makeImage(),
@@ -106,10 +126,10 @@ enum SamplePlaygroundFiles {
 
     private static func createSampleInvoicePDF(at url: URL) {
         let rows = [
-            ["Item", "Department", "Qty", "Unit Price", "Total"],
-            ["Mac Studio M3 Ultra", "Engineering", "2", "$3,999", "$7,998"],
-            ["Studio Display", "Design", "3", "$1,599", "$4,797"],
-            ["FlipDoc Team License", "Operations", "25", "$29", "$725"]
+            ["Item", "Department", "Contact", "Unit Price", "Total"],
+            ["Mac Studio M3 Ultra", "Engineering", "eng@meld.app", "$3,999", "$7,998"],
+            ["Studio Display", "Design", "+1 415-555-0192", "$1,599", "$4,797"],
+            ["MELD Team License", "Operations", "ops@meld.app", "$29", "$725"]
         ]
         let table = ExtractedTable(page: 1, rows: rows)
         let tmpXlsx = url.deletingLastPathComponent().appendingPathComponent("tmp_inv.xlsx")
@@ -118,9 +138,74 @@ enum SamplePlaygroundFiles {
             _ = try? XLSXtoPDFEngine.convert(inputURL: tmpXlsx, outputURL: url)
         }
     }
+
+    private static func createSampleAudioWAV(at url: URL) {
+        let sr = 44100
+        let count = sr / 2
+        var data = Data()
+        let dataSize = UInt32(count * 2)
+        func le<T: FixedWidthInteger>(_ v: T) -> [UInt8] { withUnsafeBytes(of: v.littleEndian) { Array($0) } }
+        data.append(contentsOf: "RIFF".utf8)
+        data.append(contentsOf: le(UInt32(36 + dataSize)))
+        data.append(contentsOf: "WAVEfmt ".utf8)
+        data.append(contentsOf: le(UInt32(16)))
+        data.append(contentsOf: le(UInt16(1)))
+        data.append(contentsOf: le(UInt16(1)))
+        data.append(contentsOf: le(UInt32(sr)))
+        data.append(contentsOf: le(UInt32(sr * 2)))
+        data.append(contentsOf: le(UInt16(2)))
+        data.append(contentsOf: le(UInt16(16)))
+        data.append(contentsOf: "data".utf8)
+        data.append(contentsOf: le(dataSize))
+        for i in 0..<count {
+            let env = sin(Double.pi * Double(i) / Double(count))
+            let v = Int16(sin(2.0 * .pi * 440.0 * Double(i) / Double(sr)) * 12000.0 * env)
+            data.append(contentsOf: le(UInt16(bitPattern: v)))
+        }
+        try? data.write(to: url)
+    }
 }
 
-/// Drop bridge for the Studio Canvas.
+public enum StudioExplorerCategory: String, CaseIterable, Identifiable {
+    case image = "Images"
+    case video = "Video"
+    case audio = "Audio"
+    case pdf = "PDF"
+    case document = "Documents"
+    case spreadsheet = "Spreadsheets"
+    case subtitle = "Subtitles"
+    case archive = "Archives"
+
+    public var id: String { rawValue }
+
+    public var icon: String {
+        switch self {
+        case .image: return "photo"
+        case .video: return "play.rectangle"
+        case .audio: return "music.note"
+        case .pdf: return "doc.richtext"
+        case .document: return "doc.text"
+        case .spreadsheet: return "tablecells"
+        case .subtitle: return "captions.bubble"
+        case .archive: return "archivebox"
+        }
+    }
+
+    public var dummyURL: URL {
+        switch self {
+        case .image: return URL(fileURLWithPath: "/tmp/sample.jpg")
+        case .video: return URL(fileURLWithPath: "/tmp/sample.mov")
+        case .audio: return URL(fileURLWithPath: "/tmp/sample.mp3")
+        case .pdf: return URL(fileURLWithPath: "/tmp/sample.pdf")
+        case .document: return URL(fileURLWithPath: "/tmp/sample.docx")
+        case .spreadsheet: return URL(fileURLWithPath: "/tmp/sample.csv")
+        case .subtitle: return URL(fileURLWithPath: "/tmp/sample.srt")
+        case .archive: return URL(fileURLWithPath: "/tmp/sample.zip")
+        }
+    }
+}
+
+/// Non-capturing NSView drop receiver for the Studio playground card.
 @MainActor
 private final class StudioDropNSView: NSView {
     var onTargetChanged: ((Bool) -> Void)?
@@ -177,11 +262,17 @@ private struct StudioDropBridge: NSViewRepresentable {
     }
 }
 
+/// Observes live `⇧ Shift`, `⌘ Command`, and `⌃ Control` keypresses + selected Explorer tab & hovered petals.
 @MainActor
 final class LiveModifierKeyObserver: ObservableObject {
     @Published var heldMode: ModifierMode? = nil
     @Published var samples: [SamplePlaygroundFiles.SampleCard] = []
     @Published var isDropTargeted: Bool = false
+    @Published var selectedSampleID: String? = "img"
+    @Published var explorerCategory: StudioExplorerCategory = .image
+    @Published var hoveredConvertIndex: Int? = 0
+    @Published var hoveredToolIndex: Int? = 0
+
     private var localMonitor: Any?
     private var globalMonitor: Any?
 
@@ -219,245 +310,23 @@ public struct PlaygroundDashboardView: View {
     public init() {}
 
     public var body: some View {
-        VStack(spacing: 18) {
-            // Top Hero Bar (FlipDoc Studio Aesthetic)
-            HStack(alignment: .center, spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [FlipDocTheme.orange, FlipDocTheme.warmOrange],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 46, height: 46)
-                        .shadow(color: FlipDocTheme.orange.opacity(0.32), radius: 8, x: 0, y: 4)
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(spacing: 20) {
+                // 1. Top MELD Navigation Bar
+                topNavigationBar
 
-                    Image(systemName: "circle.hexagongrid.fill")
-                        .font(.system(size: 21, weight: .bold))
-                        .foregroundStyle(.white)
-                }
+                // 2. Interactive Finder-Icon Playground Canvas (Inspired by the reference video!)
+                finderDesktopPlaygroundCard
 
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 8) {
-                        Text("FlipDoc")
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                        Text("LOCAL · ZERO-CLOUD")
-                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                            .tracking(0.6)
-                            .foregroundStyle(FlipDocTheme.orange)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2.5)
-                            .background(Capsule().fill(FlipDocTheme.orange.opacity(0.14)))
-                    }
-                    Text("Drag any file in Finder, tap a modifier key, and drop on a petal.")
-                        .font(.system(size: 12.5, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
+                // 3. Interactive Category Wheel Explorer (Side-by-side ⇧ Convert & ⌘ Tools wheels!)
+                categoryWheelExplorerSection
 
-                Spacer()
-
-                HStack(spacing: 8) {
-                    Button(action: { FloatingShelfManager.shared.toggleWindow() }) {
-                        Label("Float Shelf", systemImage: "pin.fill")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button(action: { SettingsWindowController.shared.show() }) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 13))
-                    }
-                    .buttonStyle(.bordered)
-                    .help("Settings")
-                }
+                // 4. Bottom Split: Quick Toggles + Recent Outputs
+                bottomControlsAndRecentsSection
             }
-
-            // Live Interactive Modifier Keycaps (lights up when user presses Shift, Cmd, or Ctrl!)
-            HStack(spacing: 12) {
-                liveKeycapCard(
-                    mode: .conversions,
-                    keyName: "⇧ Shift",
-                    title: "Convert Formats",
-                    detail: "PNG · WEBP · HEIC · XLSX · DOCX · MP4 · GIF"
-                )
-                liveKeycapCard(
-                    mode: .tools,
-                    keyName: "⌘ Command",
-                    title: "Quick Tools",
-                    detail: "Remove BG · Handout · Redact · Lock · Scan QR · Compress"
-                )
-                liveKeycapCard(
-                    mode: .actions,
-                    keyName: "⌃ Control",
-                    title: "File Actions",
-                    detail: "Float · AirDrop · Copy · Move · Copy Path · Terminal"
-                )
-            }
-
-            // Interactive Drop & Sample Playground Card
-            VStack(spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Try It Right Here")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                        Text("Drag a sample card below and tap ⇧ Shift — or drop any real files onto this canvas")
-                            .font(.system(size: 11.5, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button(action: chooseFilesWithOpenPanel) {
-                        Label("Choose Files…", systemImage: "plus.circle.fill")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 6.5)
-                            .background(Capsule().fill(FlipDocTheme.orange))
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // 4 Draggable + Clickable Sample Cards
-                HStack(spacing: 10) {
-                    ForEach(keyObserver.samples) { sample in
-                        samplePracticeCard(sample)
-                    }
-                }
-            }
-            .padding(18)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(FlipDocTheme.cardBackground(for: scheme))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(
-                        keyObserver.isDropTargeted ? FlipDocTheme.orange : FlipDocTheme.cardBorder(for: scheme),
-                        lineWidth: keyObserver.isDropTargeted ? 2.2 : 1.0
-                    )
-            )
-            .overlay(
-                StudioDropBridge(
-                    onTargetChanged: { keyObserver.isDropTargeted = $0 },
-                    onDropped: { urls in
-                        RadialOverlayWindow.shared.show(
-                            at: NSEvent.mouseLocation,
-                            for: urls,
-                            mode: .conversions,
-                            isDragSession: false
-                        )
-                    }
-                )
-            )
-
-            // Bottom Split: Quick Toggles + Recent Conversions
-            HStack(alignment: .top, spacing: 14) {
-                // Quick Toggles
-                VStack(alignment: .leading, spacing: 11) {
-                    Text("QUICK CONTROLS")
-                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                        .tracking(0.6)
-                        .foregroundStyle(.secondary)
-
-                    Toggle("Drag Modifier Wheel", isOn: $prefs.dragModifiersEnabled)
-                        .toggleStyle(.switch)
-                        .tint(FlipDocTheme.orange)
-                        .font(.system(size: 12.5, weight: .medium, design: .rounded))
-
-                    Toggle("Desktop Drop Zone", isOn: $prefs.showDesktopDropZone)
-                        .toggleStyle(.switch)
-                        .tint(FlipDocTheme.orange)
-                        .font(.system(size: 12.5, weight: .medium, design: .rounded))
-
-                    Toggle("Tick Sounds & Haptics", isOn: $prefs.soundsAndHapticsEnabled)
-                        .toggleStyle(.switch)
-                        .tint(FlipDocTheme.orange)
-                        .font(.system(size: 12.5, weight: .medium, design: .rounded))
-
-                    Spacer(minLength: 0)
-                }
-                .padding(15)
-                .frame(width: 225, height: 158)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(FlipDocTheme.cardBackground(for: scheme)))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FlipDocTheme.cardBorder(for: scheme), lineWidth: 1))
-
-                // Recent Conversions
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("RECENT OUTPUTS")
-                            .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                            .tracking(0.6)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        if !prefs.recentRecords.isEmpty {
-                            Button("Clear") {
-                                prefs.clearHistory()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    if prefs.recentRecords.isEmpty {
-                        VStack(spacing: 4) {
-                            Spacer()
-                            Text("Converted files will appear here")
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                            Text("Originals are never overwritten — outputs save right beside your file.")
-                                .font(.system(size: 10.5, design: .rounded))
-                                .foregroundStyle(.tertiary)
-                            Spacer()
-                        }
-                        .frame(maxWidth: .infinity)
-                    } else {
-                        ScrollView(.vertical, showsIndicators: false) {
-                            VStack(spacing: 6) {
-                                ForEach(prefs.recentRecords.prefix(8)) { rec in
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(FlipDocTheme.orange)
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text(rec.outputName)
-                                                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-                                                .lineLimit(1)
-                                            Text(rec.actionSummary)
-                                                .font(.system(size: 10, design: .rounded))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                        if rec.existsOnDisk {
-                                            Button("Float") {
-                                                FloatingShelfManager.shared.pinFiles([rec.outputURL])
-                                            }
-                                            .buttonStyle(.bordered)
-                                            .controlSize(.mini)
-
-                                            Button("Reveal") {
-                                                NSWorkspace.shared.activateFileViewerSelecting([rec.outputURL])
-                                            }
-                                            .buttonStyle(.bordered)
-                                            .controlSize(.mini)
-                                        }
-                                    }
-                                    .padding(.vertical, 2)
-                                }
-                            }
-                        }
-                    }
-                }
-                .padding(15)
-                .frame(maxWidth: .infinity)
-                .frame(height: 158)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(FlipDocTheme.cardBackground(for: scheme)))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FlipDocTheme.cardBorder(for: scheme), lineWidth: 1))
-            }
+            .padding(24)
         }
-        .padding(22)
-        .frame(width: 720, height: 540)
+        .frame(width: 840, height: 740)
         .background(FlipDocTheme.canvasBackground(for: scheme))
         .onAppear {
             keyObserver.samples = SamplePlaygroundFiles.prepareSamples()
@@ -468,88 +337,211 @@ public struct PlaygroundDashboardView: View {
         }
     }
 
-    private func liveKeycapCard(mode: ModifierMode, keyName: String, title: String, detail: String) -> some View {
-        let isHeld = keyObserver.heldMode == mode
-        return VStack(alignment: .leading, spacing: 7) {
-            HStack {
-                Text(keyName)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(isHeld ? .white : FlipDocTheme.warmOrange)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(isHeld ? FlipDocTheme.orange : FlipDocTheme.orange.opacity(0.12))
+    // MARK: - 1. Top Navigation Bar
+
+    private var topNavigationBar: some View {
+        HStack(alignment: .center, spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [FlipDocTheme.orange, FlipDocTheme.warmOrange],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
-                Spacer()
-                if isHeld {
-                    Text("ACTIVE")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .foregroundStyle(FlipDocTheme.orange)
-                }
+                    .frame(width: 42, height: 42)
+                    .shadow(color: FlipDocTheme.orange.opacity(0.32), radius: 8, x: 0, y: 4)
+
+                Image(systemName: "circle.hexagongrid.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(.white)
             }
-            Text(title)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-            Text(detail)
-                .font(.system(size: 10.5, design: .rounded))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Text("MELD")
+                        .font(.system(size: 21, weight: .bold, design: .rounded))
+                    Text("LOCAL · ZERO-CLOUD")
+                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                        .tracking(0.6)
+                        .foregroundStyle(FlipDocTheme.orange)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2.5)
+                        .background(Capsule().fill(FlipDocTheme.orange.opacity(0.14)))
+                }
+                Text("The zero-click offline file studio — drag any file, tap ⇧ Shift, ⌘ Command, or ⌃ Control, and drop.")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                Button(action: chooseFilesWithOpenPanel) {
+                    Label("Open Files…", systemImage: "plus.circle.fill")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(FlipDocTheme.orange)
+
+                Button(action: { FloatingShelfManager.shared.toggleWindow() }) {
+                    Label("Float Shelf", systemImage: "pin.fill")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                }
+                .buttonStyle(.bordered)
+
+                Button(action: { SettingsWindowController.shared.show() }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 13))
+                }
+                .buttonStyle(.bordered)
+                .help("MELD Settings")
+            }
         }
-        .padding(13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .fill(isHeld ? FlipDocTheme.orange.opacity(0.09) : FlipDocTheme.cardBackground(for: scheme))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(isHeld ? FlipDocTheme.orange : FlipDocTheme.cardBorder(for: scheme), lineWidth: isHeld ? 1.8 : 1.0)
-        )
-        .animation(.easeOut(duration: 0.12), value: isHeld)
     }
 
-    private func samplePracticeCard(_ sample: SamplePlaygroundFiles.SampleCard) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(FlipDocTheme.orange.opacity(0.12))
-                        .frame(width: 32, height: 32)
-                    Image(systemName: sample.icon)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(FlipDocTheme.orange)
-                }
-                Spacer()
-                Text(sample.badge)
-                    .font(.system(size: 8.5, weight: .bold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.primary.opacity(0.06)))
+    // MARK: - 2. Finder-Icon Desktop Playground Canvas
+
+    private var finderDesktopPlaygroundCard: some View {
+        VStack(spacing: 16) {
+            // Top Floating Mode Switcher Pill (`[⇧ Convert] [⌘ Tools] [⌃ Actions]`) just like the reference video!
+            HStack(spacing: 14) {
+                liveModeBadge(mode: .conversions, symbol: "⇧", title: "Convert")
+                liveModeBadge(mode: .tools, symbol: "⌘", title: "Tools")
+                liveModeBadge(mode: .actions, symbol: "⌃", title: "Actions")
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(scheme == .dark ? Color.white.opacity(0.08) : Color.white.opacity(0.92))
+                    .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 3)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            )
 
-            Text(sample.title)
-                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-                .lineLimit(1)
+            Text("Drag any sample file below and tap ⇧ Shift, ⌘ Command, or ⌃ Control — or single-click to open the wheel")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
 
-            Text("Drag + ⇧ or Click")
-                .font(.system(size: 10, design: .rounded))
-                .foregroundStyle(FlipDocTheme.warmOrange)
+            // Authentic macOS Finder-Style Desktop Icons Row
+            HStack(spacing: 18) {
+                ForEach(keyObserver.samples) { sample in
+                    finderDesktopIconView(sample)
+                }
+            }
+            .padding(.vertical, 6)
         }
-        .padding(11)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 22)
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: scheme == .dark
+                            ? [Color(red: 0.13, green: 0.15, blue: 0.18), Color(red: 0.11, green: 0.12, blue: 0.14)]
+                            : [Color(red: 0.91, green: 0.95, blue: 0.99), Color(red: 0.98, green: 0.97, blue: 0.95)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(
+                    keyObserver.isDropTargeted ? FlipDocTheme.orange : FlipDocTheme.cardBorder(for: scheme),
+                    lineWidth: keyObserver.isDropTargeted ? 2.2 : 1.0
+                )
         )
+        .overlay(
+            StudioDropBridge(
+                onTargetChanged: { keyObserver.isDropTargeted = $0 },
+                onDropped: { urls in
+                    RadialOverlayWindow.shared.show(
+                        at: NSEvent.mouseLocation,
+                        for: urls,
+                        mode: keyObserver.heldMode ?? .conversions,
+                        isDragSession: false
+                    )
+                }
+            )
+        )
+    }
+
+    private func liveModeBadge(mode: ModifierMode, symbol: String, title: String) -> some View {
+        let isHeld = keyObserver.heldMode == mode
+        return Button(action: {
+            if let sample = keyObserver.samples.first(where: { $0.id == keyObserver.selectedSampleID }) ?? keyObserver.samples.first {
+                RadialOverlayWindow.shared.show(
+                    at: NSEvent.mouseLocation,
+                    for: [sample.url],
+                    mode: mode,
+                    isDragSession: false
+                )
+            }
+        }) {
+            HStack(spacing: 5) {
+                Text(symbol)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(isHeld ? .white : FlipDocTheme.warmOrange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isHeld ? FlipDocTheme.orange : FlipDocTheme.orange.opacity(0.14))
+                    )
+                Text(title)
+                    .font(.system(size: 12, weight: isHeld ? .bold : .semibold, design: .rounded))
+                    .foregroundStyle(isHeld ? FlipDocTheme.orange : .primary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func finderDesktopIconView(_ sample: SamplePlaygroundFiles.SampleCard) -> some View {
+        let isSelected = keyObserver.selectedSampleID == sample.id
+        let finderBlue = Color(red: 0.05, green: 0.42, blue: 0.92)
+
+        return VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? Color.black.opacity(0.10) : Color.clear)
+                    .frame(width: 68, height: 68)
+
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white)
+                        .frame(width: 56, height: 56)
+                        .shadow(color: .black.opacity(0.16), radius: 5, x: 0, y: 2)
+
+                    Image(systemName: sample.icon)
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(FlipDocTheme.orange)
+                }
+            }
+
+            // Authentic macOS Finder filename pill (`landscape.png`, `field-notes.pdf`, etc.)
+            Text(sample.title)
+                .font(.system(size: 11, weight: isSelected ? .semibold : .medium, design: .rounded))
+                .foregroundStyle(isSelected ? .white : .primary)
+                .lineLimit(1)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(isSelected ? finderBlue : Color.clear)
+                )
+        }
+        .frame(width: 110)
         .overlay(
             NativeFileDragSourceBridge(
                 urls: [sample.url],
                 onSingleClick: {
+                    keyObserver.selectedSampleID = sample.id
                     RadialOverlayWindow.shared.show(
                         at: NSEvent.mouseLocation,
                         for: [sample.url],
@@ -562,6 +554,349 @@ public struct PlaygroundDashboardView: View {
                 }
             )
         )
+    }
+
+    // MARK: - 3. Interactive Category Wheel Explorer (Side-by-Side ⇧ Shift & ⌘ Command Wheels)
+
+    private var categoryWheelExplorerSection: some View {
+        let cat = keyObserver.explorerCategory
+        let convertOptions = FileCategory.options(for: [cat.dummyURL], mode: .conversions)
+        let toolOptions = FileCategory.options(for: [cat.dummyURL], mode: .tools)
+
+        return VStack(spacing: 14) {
+            // Category Selector Tabs (`Images`, `Video`, `Audio`, `PDF`, `Documents`, `Spreadsheets`, `Subtitles`, `Archives`)
+            HStack(spacing: 6) {
+                ForEach(StudioExplorerCategory.allCases) { item in
+                    let active = (keyObserver.explorerCategory == item)
+                    Button(action: {
+                        keyObserver.explorerCategory = item
+                        keyObserver.hoveredConvertIndex = 0
+                        keyObserver.hoveredToolIndex = 0
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: item.icon)
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(item.rawValue)
+                                .font(.system(size: 11.5, weight: active ? .bold : .medium, design: .rounded))
+                        }
+                        .foregroundStyle(active ? .primary : .secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(active ? FlipDocTheme.cardBackground(for: scheme) : Color.clear)
+                                .shadow(color: active ? .black.opacity(0.07) : .clear, radius: 4, x: 0, y: 1)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .stroke(active ? FlipDocTheme.cardBorder(for: scheme) : Color.clear, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            // Side-by-Side Interactive Wheels Card
+            VStack(spacing: 14) {
+                Text("\(cat.rawValue) studio wheels")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+
+                HStack(alignment: .top, spacing: 24) {
+                    // Left: ⇧ Shift — Convert Formats Wheel
+                    interactiveWheelShowcaseColumn(
+                        keySymbol: "⇧",
+                        keyName: "shift",
+                        subtitle: "Convert formats",
+                        options: convertOptions,
+                        hoveredIndex: keyObserver.hoveredConvertIndex ?? 0,
+                        onHoverIndex: { keyObserver.hoveredConvertIndex = $0 },
+                        onClickOption: { option in
+                            triggerSampleAction(for: cat, option: option)
+                        }
+                    )
+
+                    Divider()
+                        .frame(height: 290)
+
+                    // Right: ⌘ Command — File Tools Wheel
+                    interactiveWheelShowcaseColumn(
+                        keySymbol: "⌘",
+                        keyName: "command",
+                        subtitle: "File tools",
+                        options: toolOptions,
+                        hoveredIndex: keyObserver.hoveredToolIndex ?? 0,
+                        onHoverIndex: { keyObserver.hoveredToolIndex = $0 },
+                        onClickOption: { option in
+                            triggerSampleAction(for: cat, option: option)
+                        }
+                    )
+                }
+
+                Text("Hover any petal to preview, or click a petal to run it immediately on a sample file.")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(FlipDocTheme.cardBackground(for: scheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(FlipDocTheme.cardBorder(for: scheme), lineWidth: 1)
+            )
+        }
+    }
+
+    private func interactiveWheelShowcaseColumn(
+        keySymbol: String,
+        keyName: String,
+        subtitle: String,
+        options: [FanOption],
+        hoveredIndex: Int,
+        onHoverIndex: @escaping (Int) -> Void,
+        onClickOption: @escaping (FanOption) -> Void
+    ) -> some View {
+        let safeIdx = min(max(0, hoveredIndex), max(0, options.count - 1))
+        let activeOption: FanOption? = options.isEmpty ? nil : options[safeIdx]
+        let isDense = options.count > 6
+
+        return VStack(spacing: 10) {
+            // 3D macOS Keyboard Keycap (`⇧ shift` / `⌘ command`)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(keySymbol)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                Text(keyName)
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 6)
+            .frame(minWidth: 56, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(scheme == .dark ? Color(white: 0.20) : Color.white)
+                    .shadow(color: .black.opacity(0.14), radius: 3, x: 0, y: 2)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+            )
+
+            Text(subtitle)
+                .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+
+            // Interactive Mini Radial Wheel
+            ZStack {
+                DonutBackdropShape()
+                    .fill(
+                        scheme == .dark
+                            ? Color(red: 0.16, green: 0.17, blue: 0.19).opacity(0.88)
+                            : Color(red: 0.91, green: 0.93, blue: 0.95).opacity(0.72),
+                        style: FillStyle(eoFill: true)
+                    )
+                    .shadow(color: .black.opacity(0.10), radius: 10, x: 0, y: 4)
+
+                ForEach(Array(options.enumerated()), id: \.element.id) { idx, opt in
+                    let isHi = (idx == safeIdx)
+                    let shape = PetalShape(index: idx, count: options.count)
+                    let labelPos = PetalGeometry.labelPosition(index: idx, count: options.count)
+
+                    ZStack {
+                        shape
+                            .fill(
+                                isHi
+                                    ? LinearGradient(colors: [FlipDocTheme.orange, FlipDocTheme.warmOrange], startPoint: .top, endPoint: .bottom)
+                                    : LinearGradient(
+                                        colors: scheme == .dark
+                                            ? [Color(white: 0.24), Color(white: 0.19)]
+                                            : [Color.white, Color(white: 0.96)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                            )
+                            .overlay(
+                                shape.stroke(
+                                    isHi ? FlipDocTheme.orange : Color.primary.opacity(0.10),
+                                    lineWidth: 0.8
+                                )
+                            )
+                            .onHover { inside in
+                                if inside { onHoverIndex(idx) }
+                            }
+                            .onTapGesture {
+                                onHoverIndex(idx)
+                                onClickOption(opt)
+                            }
+
+                        Group {
+                            if opt.showsPetalIcon {
+                                VStack(spacing: 2) {
+                                    Image(systemName: opt.systemImage)
+                                        .font(.system(size: isDense ? 12 : 14, weight: .semibold))
+                                        .foregroundStyle(isHi ? .white : .primary)
+                                    Text(opt.wheelTitle)
+                                        .font(.system(size: isDense ? 7.2 : 8.0, weight: .bold, design: .rounded))
+                                        .foregroundStyle(isHi ? .white : .primary)
+                                        .lineLimit(1)
+                                }
+                            } else {
+                                Text(opt.wheelTitle)
+                                    .font(.system(size: isDense ? 10.5 : 12.0, weight: .bold, design: .rounded))
+                                    .foregroundStyle(isHi ? .white : .primary)
+                            }
+                        }
+                        .offset(x: labelPos.x, y: labelPos.y)
+                        .allowsHitTesting(false)
+                    }
+                }
+
+                // Center Hub Pill
+                Text(activeOption?.wheelTitle ?? "")
+                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .frame(minWidth: 64, minHeight: 28)
+                    .background(
+                        Capsule()
+                            .fill(scheme == .dark ? Color(white: 0.22) : Color.white)
+                            .shadow(color: .black.opacity(0.10), radius: 4, x: 0, y: 2)
+                    )
+            }
+            .frame(width: PetalGeometry.wheelDiameter, height: PetalGeometry.wheelDiameter)
+            .scaleEffect(0.84)
+            .frame(width: 210, height: 210)
+
+            Text(activeOption?.label ?? "")
+                .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func triggerSampleAction(for explorerCat: StudioExplorerCategory, option: FanOption) {
+        let matchingSample = keyObserver.samples.first { sample in
+            switch explorerCat {
+            case .image: return sample.category == .image
+            case .pdf: return sample.category == .pdf
+            case .audio: return sample.category == .audio
+            case .spreadsheet: return sample.category == .spreadsheet
+            case .subtitle: return sample.category == .subtitle
+            default: return true
+            }
+        } ?? keyObserver.samples.first
+
+        guard let sample = matchingSample else { return }
+        ActionDispatcher.shared.execute(option: option, urls: [sample.url])
+    }
+
+    // MARK: - 4. Bottom Controls & Recent Outputs
+
+    private var bottomControlsAndRecentsSection: some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 11) {
+                Text("QUICK CONTROLS")
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                    .tracking(0.6)
+                    .foregroundStyle(.secondary)
+
+                Toggle("Drag Modifier Wheel", isOn: $prefs.dragModifiersEnabled)
+                    .toggleStyle(.switch)
+                    .tint(FlipDocTheme.orange)
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+
+                Toggle("Desktop Drop Zone", isOn: $prefs.showDesktopDropZone)
+                    .toggleStyle(.switch)
+                    .tint(FlipDocTheme.orange)
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+
+                Toggle("Tick Sounds & Haptics", isOn: $prefs.soundsAndHapticsEnabled)
+                    .toggleStyle(.switch)
+                    .tint(FlipDocTheme.orange)
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+
+                Spacer(minLength: 0)
+            }
+            .padding(15)
+            .frame(width: 230, height: 150)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(FlipDocTheme.cardBackground(for: scheme)))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FlipDocTheme.cardBorder(for: scheme), lineWidth: 1))
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("RECENT OUTPUTS")
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                        .tracking(0.6)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if !prefs.recentRecords.isEmpty {
+                        Button("Clear") {
+                            prefs.clearHistory()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                    }
+                }
+
+                if prefs.recentRecords.isEmpty {
+                    VStack(spacing: 4) {
+                        Spacer()
+                        Text("Converted files will appear here")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        Text("Originals are never overwritten — outputs save right beside your file.")
+                            .font(.system(size: 10.5, design: .rounded))
+                            .foregroundStyle(.tertiary)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 6) {
+                            ForEach(prefs.recentRecords.prefix(8)) { rec in
+                                HStack(spacing: 8) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(FlipDocTheme.orange)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(rec.outputName)
+                                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                                            .lineLimit(1)
+                                        Text(rec.actionSummary)
+                                            .font(.system(size: 10, design: .rounded))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if rec.existsOnDisk {
+                                        Button("Float") {
+                                            FloatingShelfManager.shared.pinFiles([rec.outputURL])
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.mini)
+
+                                        Button("Reveal") {
+                                            NSWorkspace.shared.activateFileViewerSelecting([rec.outputURL])
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.mini)
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(15)
+            .frame(maxWidth: .infinity)
+            .frame(height: 150)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(FlipDocTheme.cardBackground(for: scheme)))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(FlipDocTheme.cardBorder(for: scheme), lineWidth: 1))
+        }
     }
 
     private func chooseFilesWithOpenPanel() {
@@ -594,7 +929,7 @@ public final class PlaygroundDashboardWindowController {
         if window == nil {
             let host = NSHostingController(rootView: PlaygroundDashboardView())
             let w = NSWindow(contentViewController: host)
-            w.title = "FlipDoc Studio"
+            w.title = "MELD Studio"
             w.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
             w.titlebarAppearsTransparent = true
             w.isMovableByWindowBackground = true
