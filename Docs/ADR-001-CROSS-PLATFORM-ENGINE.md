@@ -72,3 +72,4 @@ Hardware-accelerated neural and media pipelines provided by the host OS:
 - **Tiny Binary Size**: Keeping neural weights and video codecs delegated to the OS keeps the desktop and mobile installers under **5–10 MB**.
 - **Single Source of Truth for Business Logic**: Fixing a CSV edge case, adding a new PII redaction rule, or adding a new petal operation in `meld-core` immediately ships to macOS, Windows, and Android via **UniFFI** (which auto-generates Swift, Kotlin, and C/Windows bindings from a single Rust crate).
 - **Zero Disruption to Current macOS App**: We can extract modules into `meld-core` one engine at a time while `FlipDocCore` continues to pass all existing Swift tests.
+

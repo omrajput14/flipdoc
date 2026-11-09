@@ -40,3 +40,4 @@ flowchart TD
 2. **Zero-Click Muscle Memory**: Never bury common actions inside 5-step wizards when a 1-second drag-and-release or share-sheet tap can solve it.
 3. **Never Overwrite Originals**: Every operation outputs a cleanly named sibling file (`<Name>.<ext>` or `<Name> (1).<ext>`).
 4. **Preserve Git History**: All rebranding and org moves use `git mv` and GitHub Repository Transfer so every commit and PR remains intact.
+
