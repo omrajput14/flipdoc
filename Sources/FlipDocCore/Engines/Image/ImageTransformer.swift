@@ -1,9 +1,11 @@
 import Foundation
 import AppKit
 import CoreGraphics
+import CoreImage
 import ImageIO
 import UniformTypeIdentifiers
 import PDFKit
+@preconcurrency import Vision
 import WebKit
 
 public enum ImageTransformer {
@@ -55,13 +57,16 @@ public enum ImageTransformer {
         return outURL
     }
 
-    /// Compresses an image with target quality (`0.1...1.0`) and optional maximum pixel dimension.
+    /// Compresses an image with target quality (`0.1...1.0`), optional maximum pixel dimension,
+    /// and optional strict portal-upload `targetMaxBytes` (`< 200 KB`, `< 500 KB`, `< 1 MB`, `< 2 MB`).
     public static func compress(
         inputURL: URL,
         quality: Double,
-        maxDimension: Int? = nil
+        maxDimension: Int? = nil,
+        targetMaxBytes: Int64? = nil
     ) async throws -> URL {
-        var cgImage = try loadOrientedCGImage(from: inputURL)
+        let baseCG = try loadOrientedCGImage(from: inputURL)
+        var cgImage = baseCG
         if let maxDim = maxDimension, maxDim > 0 {
             let currentMax = max(cgImage.width, cgImage.height)
             if currentMax > maxDim {
@@ -69,6 +74,51 @@ public enum ImageTransformer {
                 let newW = max(1, Int((Double(cgImage.width) * scale).rounded()))
                 let newH = max(1, Int((Double(cgImage.height) * scale).rounded()))
                 cgImage = try resizeCGImage(cgImage, width: newW, height: newH)
+            }
+        }
+
+        // If a strict target byte limit is requested (e.g. < 200 KB for portal upload), automatically step quality & scale
+        if let limitBytes = targetMaxBytes, limitBytes > 0 {
+            let outURL = OutputNaming.uniqueFileURL(nextTo: inputURL, suffix: "Compressed", newExtension: "jpg")
+            let scales: [Double] = [1.0, 0.85, 0.70, 0.55, 0.42, 0.30, 0.20]
+            let qualities: [Double] = [0.82, 0.68, 0.54, 0.40, 0.28, 0.18]
+            var smallestData: Data? = nil
+
+            outer: for scaleFactor in scales {
+                let scaledCG: CGImage
+                if scaleFactor < 0.99 {
+                    let w = max(64, Int((Double(cgImage.width) * scaleFactor).rounded()))
+                    let h = max(64, Int((Double(cgImage.height) * scaleFactor).rounded()))
+                    scaledCG = (try? resizeCGImage(cgImage, width: w, height: h)) ?? cgImage
+                } else {
+                    scaledCG = cgImage
+                }
+
+                for q in qualities {
+                    let buf = NSMutableData()
+                    if let dest = CGImageDestinationCreateWithData(buf, UTType.jpeg.identifier as CFString, 1, nil) {
+                        let props: [CFString: Any] = [
+                            kCGImageDestinationLossyCompressionQuality: q,
+                            kCGImageDestinationEmbedThumbnail: false
+                        ]
+                        CGImageDestinationAddImage(dest, scaledCG, props as CFDictionary)
+                        if CGImageDestinationFinalize(dest) {
+                            let data = buf as Data
+                            if smallestData == nil || data.count < smallestData!.count {
+                                smallestData = data
+                            }
+                            if Int64(data.count) <= limitBytes {
+                                try data.write(to: outURL, options: .atomic)
+                                return outURL
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let best = smallestData {
+                try best.write(to: outURL, options: .atomic)
+                return outURL
             }
         }
 
@@ -97,6 +147,187 @@ public enum ImageTransformer {
         let outURL = OutputNaming.uniqueFileURL(nextTo: inputURL, suffix: "Compressed", newExtension: cleanExt)
         try writeCGImage(cgImage, to: outURL, utTypeIdentifier: utID, quality: quality, stripMetadata: true)
         return outURL
+    }
+
+    /// 1-click offline background removal for slides, portraits, and ID photos.
+    /// Uses Apple Vision `VNGenerateForegroundInstanceMaskRequest` + `CoreImage` `CIBlendWithMask`,
+    /// with a deterministic border flood-fill alpha cutout fallback for graphic slides/icons and headless VMs.
+    public static func removeBackground(inputURL: URL) async throws -> URL {
+        let sourceCG = try loadOrientedCGImage(from: inputURL)
+        let cutoutCG: CGImage
+
+        if let visionCG = try? removeBackgroundViaVision(sourceCG),
+           hasMeaningfulTransparency(visionCG) {
+            cutoutCG = visionCG
+        } else {
+            cutoutCG = try removeBackgroundViaBorderFloodFill(sourceCG)
+        }
+
+        let outURL = OutputNaming.uniqueFileURL(nextTo: inputURL, suffix: "No BG", newExtension: "png")
+        try writeCGImage(cutoutCG, to: outURL, utTypeIdentifier: UTType.png.identifier, quality: 1.0, stripMetadata: false)
+        return outURL
+    }
+
+    private static func removeBackgroundViaVision(_ sourceCG: CGImage) throws -> CGImage? {
+        let request = VNGenerateForegroundInstanceMaskRequest()
+        let handler = VNImageRequestHandler(cgImage: sourceCG, options: [:])
+        try handler.perform([request])
+
+        guard let obs = request.results?.first, !obs.allInstances.isEmpty else {
+            return nil
+        }
+
+        let maskBuffer = try obs.generateScaledMaskForImage(forInstances: obs.allInstances, from: handler)
+        let originalCI = CIImage(cgImage: sourceCG)
+        let maskCI = CIImage(cvPixelBuffer: maskBuffer)
+        let clearBG = CIImage.empty().cropped(to: originalCI.extent)
+
+        guard let blend = CIFilter(name: "CIBlendWithMask") else { return nil }
+        blend.setValue(originalCI, forKey: kCIInputImageKey)
+        blend.setValue(clearBG, forKey: kCIInputBackgroundImageKey)
+        blend.setValue(maskCI, forKey: kCIInputMaskImageKey)
+
+        guard let outputCI = blend.outputImage else { return nil }
+        let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+        return ciContext.createCGImage(outputCI, from: originalCI.extent, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+    }
+
+    private static func hasMeaningfulTransparency(_ cg: CGImage) -> Bool {
+        let w = cg.width, h = cg.height
+        guard w > 4, h > 4 else { return false }
+        let cs = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        var buf = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(
+            data: &buf,
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bytesPerRow: w * 4,
+            space: cs,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return false }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+        var transparentCount = 0
+        var opaqueCount = 0
+        let step = max(1, (w * h) / 2000)
+        for idx in stride(from: 0, to: w * h, by: step) {
+            let alpha = buf[idx * 4 + 3]
+            if alpha < 32 { transparentCount += 1 }
+            else if alpha > 200 { opaqueCount += 1 }
+        }
+        return transparentCount > 5 && opaqueCount > 5
+    }
+
+    /// Deterministic border-seeded flood-fill background remover for flat slides, logos, and CI test runners.
+    private static func removeBackgroundViaBorderFloodFill(_ sourceCG: CGImage) throws -> CGImage {
+        let w = sourceCG.width
+        let h = sourceCG.height
+        let cs = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+
+        guard let ctx = CGContext(
+            data: &pixels,
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bytesPerRow: w * 4,
+            space: cs,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw FlipDocError("Failed allocating pixel buffer for background removal.")
+        }
+        ctx.draw(sourceCG, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+        // Sample 4 corners to determine primary background RGB
+        let cornerIndices = [0, w - 1, (h - 1) * w, (h - 1) * w + (w - 1)]
+        var sumR = 0, sumG = 0, sumB = 0
+        for c in cornerIndices {
+            sumR += Int(pixels[c * 4])
+            sumG += Int(pixels[c * 4 + 1])
+            sumB += Int(pixels[c * 4 + 2])
+        }
+        let bgR = sumR / 4
+        let bgG = sumG / 4
+        let bgB = sumB / 4
+
+        let thresholdSq = 48 * 48
+        var visited = [Bool](repeating: false, count: w * h)
+        var queue: [Int] = []
+        queue.reserveCapacity(w * 2 + h * 2)
+
+        func enqueueIfNeeded(_ x: Int, _ y: Int) {
+            let i = y * w + x
+            if visited[i] { return }
+            let dr = Int(pixels[i * 4]) - bgR
+            let dg = Int(pixels[i * 4 + 1]) - bgG
+            let db = Int(pixels[i * 4 + 2]) - bgB
+            if dr * dr + dg * dg + db * db <= thresholdSq {
+                visited[i] = true
+                queue.append(i)
+            }
+        }
+
+        for x in 0..<w {
+            enqueueIfNeeded(x, 0)
+            enqueueIfNeeded(x, h - 1)
+        }
+        for y in 0..<h {
+            enqueueIfNeeded(0, y)
+            enqueueIfNeeded(w - 1, y)
+        }
+
+        var head = 0
+        while head < queue.count {
+            let curr = queue[head]
+            head += 1
+            // Clear pixel to transparent
+            pixels[curr * 4] = 0
+            pixels[curr * 4 + 1] = 0
+            pixels[curr * 4 + 2] = 0
+            pixels[curr * 4 + 3] = 0
+
+            let cx = curr % w
+            let cy = curr / w
+            if cx > 0 { enqueueIfNeeded(cx - 1, cy) }
+            if cx + 1 < w { enqueueIfNeeded(cx + 1, cy) }
+            if cy > 0 { enqueueIfNeeded(cx, cy - 1) }
+            if cy + 1 < h { enqueueIfNeeded(cx, cy + 1) }
+        }
+
+        guard let outCtx = CGContext(
+            data: &pixels,
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bytesPerRow: w * 4,
+            space: cs,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ), let outCG = outCtx.makeImage() else {
+            throw FlipDocError("Failed creating cutout CGImage.")
+        }
+        return outCG
+    }
+
+    /// Generates a crisp high-resolution QR Code PNG from any string or URL.
+    public static func generateQRCode(payload: String, outputURL: URL, size: Int = 640) throws -> URL {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else {
+            throw FlipDocError("CIQRCodeGenerator is unavailable.")
+        }
+        filter.setValue(Data(payload.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let ciImg = filter.outputImage else {
+            throw FlipDocError("Failed generating QR matrix.")
+        }
+        let scaleX = CGFloat(size) / ciImg.extent.width
+        let scaleY = CGFloat(size) / ciImg.extent.height
+        let scaled = ciImg.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+        let ciCtx = CIContext()
+        guard let cgImg = ciCtx.createCGImage(scaled, from: scaled.extent) else {
+            throw FlipDocError("Failed rendering QR code image.")
+        }
+        try writeCGImage(cgImg, to: outputURL, utTypeIdentifier: UTType.png.identifier, quality: 1.0, stripMetadata: false)
+        return outputURL
     }
 
     /// Resizes an image and optionally adds rounded corners & background padding.

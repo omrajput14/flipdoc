@@ -257,26 +257,29 @@ public enum FileCategory: String, Sendable {
             switch primary {
             case .image:
                 var tools: [FanOption] = [
+                    FanOption(id: "tool_img_rembg", wheelTitle: "REMOVE BG", label: "Remove Background", systemImage: "person.crop.rectangle", actionTag: "remove_bg", showsPetalIcon: true),
                     FanOption(id: "tool_img_compress", wheelTitle: "COMPRESS", label: "Compress Image", systemImage: "arrow.down.right.and.arrow.up.left", actionTag: "tool_compress", showsPetalIcon: true, opensToolSheet: true),
                     FanOption(id: "tool_img_resize", wheelTitle: "RESIZE", label: "Resize & Frame Image", systemImage: "crop", actionTag: "tool_resize_image", showsPetalIcon: true, opensToolSheet: true),
                     FanOption(id: "tool_img_ocr", wheelTitle: "OCR", label: "Extract Text (OCR)", systemImage: "text.viewfinder", actionTag: "ocr_full", showsPetalIcon: true),
+                    FanOption(id: "tool_img_qr", wheelTitle: "SCAN QR", label: "Scan QR / Barcode", systemImage: "qrcode.viewfinder", actionTag: "scan_qr", showsPetalIcon: true),
+                    FanOption(id: "tool_img_redact", wheelTitle: "REDACT", label: "Redact Sensitive Info", systemImage: "eye.slash.fill", actionTag: "tool_redact", showsPetalIcon: true, opensToolSheet: true),
                     FanOption(id: "tool_img_meta", wheelTitle: "METADATA", label: "Inspect / Strip EXIF", systemImage: "tag.slash", actionTag: "tool_metadata", showsPetalIcon: true, opensToolSheet: true)
                 ]
                 if isMultiple {
                     tools.append(FanOption(id: "tool_img_pdf", wheelTitle: "CREATE PDF", label: "Combine Images into PDF", systemImage: "doc.badge.plus", actionTag: "to_pdf", showsPetalIcon: true))
                     tools.append(FanOption(id: "tool_img_collage", wheelTitle: "COLLAGE", label: "Create Photo Collage", systemImage: "rectangle.3.group", actionTag: "create_collage", showsPetalIcon: true))
-                } else {
-                    tools.append(FanOption(id: "tool_img_strip_fast", wheelTitle: "CLEAN EXIF", label: "Quick Strip Metadata", systemImage: "shield.lefthalf.filled", actionTag: "strip_exif", showsPetalIcon: true))
                 }
                 return tools
 
             case .pdf:
                 var tools: [FanOption] = [
                     FanOption(id: "tool_pdf_compress", wheelTitle: "COMPRESS", label: "Compress PDF", systemImage: "arrow.down.right.and.arrow.up.left", actionTag: "tool_compress", showsPetalIcon: true, opensToolSheet: true),
+                    FanOption(id: "tool_pdf_handout", wheelTitle: "HANDOUT", label: "Create 3-Up Study Handout", systemImage: "list.bullet.rectangle.portrait", actionTag: "pdf_handout", showsPetalIcon: true),
+                    FanOption(id: "tool_pdf_lock", wheelTitle: "LOCK / STAMP", label: "Password Lock & Watermark PDF", systemImage: "lock.doc.fill", actionTag: "tool_protect_pdf", showsPetalIcon: true, opensToolSheet: true),
+                    FanOption(id: "tool_pdf_redact", wheelTitle: "REDACT", label: "Redact Sensitive Info", systemImage: "eye.slash.fill", actionTag: "tool_redact", showsPetalIcon: true, opensToolSheet: true),
                     FanOption(id: "tool_pdf_split", wheelTitle: "SPLIT", label: "Split PDF Pages", systemImage: "rectangle.split.2x1", actionTag: "split_pages", showsPetalIcon: true),
                     FanOption(id: "tool_pdf_organize", wheelTitle: isMultiple ? "MERGE PDF" : "ORGANIZE", label: isMultiple ? "Merge PDFs" : "Organize / Merge PDF", systemImage: isMultiple ? "doc.on.doc" : "square.grid.2x2", actionTag: "tool_organize_pdf", showsPetalIcon: true, opensToolSheet: true),
-                    FanOption(id: "tool_pdf_ocr", wheelTitle: "OCR", label: "Scanned PDF OCR", systemImage: "text.viewfinder", actionTag: "ocr_full", showsPetalIcon: true),
-                    FanOption(id: "tool_pdf_meta", wheelTitle: "METADATA", label: "Remove PDF Metadata", systemImage: "tag.slash", actionTag: "strip_pdf_metadata", showsPetalIcon: true)
+                    FanOption(id: "tool_pdf_ocr", wheelTitle: "OCR", label: "Scanned PDF OCR", systemImage: "text.viewfinder", actionTag: "ocr_full", showsPetalIcon: true)
                 ]
                 if isMultiple {
                     tools.insert(FanOption(id: "tool_pdf_quick_merge", wheelTitle: "QUICK MERGE", label: "Instant Merge PDFs", systemImage: "arrow.triangle.merge", actionTag: "quick_merge_pdf", showsPetalIcon: true), at: 0)

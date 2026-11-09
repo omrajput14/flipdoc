@@ -66,6 +66,29 @@ struct ImageAndMediaEngineTests {
         let combinedPDF = try ImageTransformer.combineImagesToPDF(inputURLs: [src1, src2])
         let pdfDoc = PDFDocument(url: combinedPDF)
         #expect(pdfDoc?.pageCount == 2)
+
+        // Target File Size in Compress (< 50 KB strict ceiling)
+        let strictCompressed = try await ImageTransformer.compress(
+            inputURL: src1,
+            quality: 0.85,
+            maxDimension: nil,
+            targetMaxBytes: 50 * 1024
+        )
+        let strictBytes = try Data(contentsOf: strictCompressed).count
+        #expect(strictBytes > 0 && strictBytes <= 50 * 1024)
+
+        // 1-Click Offline Background Removal (Cutout PNG with transparent border)
+        let cutoutURL = try await ImageTransformer.removeBackground(inputURL: src1)
+        #expect(FileManager.default.fileExists(atPath: cutoutURL.path))
+        let cutoutCG = try ImageTransformer.loadOrientedCGImage(from: cutoutURL)
+        #expect(cutoutCG.width == 360 && cutoutCG.height == 240)
+
+        // QR Code Generation + Vision/CoreImage Barcode & QR Scanner Round-Trip
+        let qrFile = dir.appendingPathComponent("sample_qr.png")
+        let qrPayload = "https://github.com/omrajput14/flipdoc"
+        _ = try ImageTransformer.generateQRCode(payload: qrPayload, outputURL: qrFile, size: 420)
+        let decodedPayloads = try await VisionOCREngine.shared.detectBarcodes(from: qrFile)
+        #expect(decodedPayloads.contains(qrPayload))
     }
 
     @Test("MediaConverter and DocumentTools handle Audio, Video, Animated GIF, Snapshots, and DOCX/HTML")

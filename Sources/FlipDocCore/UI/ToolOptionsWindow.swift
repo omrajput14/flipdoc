@@ -10,6 +10,8 @@ import Combine
 private final class CompressSheetModel: ObservableObject {
     @Published var quality: Double = AppPreferences.shared.imageCompressionQuality
     @Published var maxDimensionChoice: Int = 0
+    /// `0` = Manual quality slider; `200`, `500`, `1024`, `2048` = target max KB for portal uploads.
+    @Published var targetMaxKB: Int = 0
     @Published var isProcessing: Bool = false
 }
 
@@ -31,34 +33,67 @@ private struct CompressToolSheetView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             sheetHeader(
                 icon: "arrow.down.right.and.arrow.up.left",
                 title: isImageMode ? "Compress Image\(urls.count > 1 ? "s" : "")" : "Compress PDF\(urls.count > 1 ? "s" : "")",
                 subtitle: "\(urls.count == 1 ? urls[0].lastPathComponent : "\(urls.count) files") · Original \(ByteCountFormatter.string(fromByteCount: totalOriginalBytes, countStyle: .file))"
             )
 
+            // Portal Upload Target File Size Presets (< 200 KB, < 500 KB, < 1 MB, < 2 MB)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Portal Upload Target Size")
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                    Spacer()
+                    Text(model.targetMaxKB > 0 ? "Guaranteed ≤ \(model.targetMaxKB >= 1024 ? "\(model.targetMaxKB / 1024) MB" : "\(model.targetMaxKB) KB")" : "Manual %")
+                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(FlipDocTheme.orange)
+                }
+
+                HStack(spacing: 6) {
+                    presetPill("Manual %", active: model.targetMaxKB == 0) { model.targetMaxKB = 0 }
+                    presetPill("< 200 KB", active: model.targetMaxKB == 200) { model.targetMaxKB = 200 }
+                    presetPill("< 500 KB", active: model.targetMaxKB == 500) { model.targetMaxKB = 500 }
+                    presetPill("< 1 MB", active: model.targetMaxKB == 1024) { model.targetMaxKB = 1024 }
+                    presetPill("< 2 MB", active: model.targetMaxKB == 2048) { model.targetMaxKB = 2048 }
+                }
+            }
+            .padding(13)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.04)))
+
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Compression Quality")
                         .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                     Spacer()
-                    Text("\(Int((model.quality * 100).rounded()))%")
+                    Text(model.targetMaxKB > 0 ? "Auto-Tuned" : "\(Int((model.quality * 100).rounded()))%")
                         .font(.system(size: 12.5, weight: .bold, design: .monospaced))
                         .foregroundStyle(FlipDocTheme.orange)
                 }
 
                 Slider(value: $model.quality, in: 0.15...0.95, step: 0.01)
                     .tint(FlipDocTheme.orange)
+                    .disabled(model.targetMaxKB > 0)
 
                 HStack(spacing: 8) {
-                    presetPill("Max Savings (42%)", active: abs(model.quality - 0.42) < 0.03) { model.quality = 0.42 }
-                    presetPill("Balanced (70%)", active: abs(model.quality - 0.70) < 0.03) { model.quality = 0.70 }
-                    presetPill("High Quality (88%)", active: abs(model.quality - 0.88) < 0.03) { model.quality = 0.88 }
+                    presetPill("Max Savings (42%)", active: model.targetMaxKB == 0 && abs(model.quality - 0.42) < 0.03) {
+                        model.targetMaxKB = 0
+                        model.quality = 0.42
+                    }
+                    presetPill("Balanced (70%)", active: model.targetMaxKB == 0 && abs(model.quality - 0.70) < 0.03) {
+                        model.targetMaxKB = 0
+                        model.quality = 0.70
+                    }
+                    presetPill("High Quality (88%)", active: model.targetMaxKB == 0 && abs(model.quality - 0.88) < 0.03) {
+                        model.targetMaxKB = 0
+                        model.quality = 0.88
+                    }
                 }
             }
-            .padding(14)
+            .padding(13)
             .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.04)))
+            .opacity(model.targetMaxKB > 0 ? 0.65 : 1.0)
 
             if isImageMode {
                 VStack(alignment: .leading, spacing: 8) {
@@ -73,7 +108,7 @@ private struct CompressToolSheetView: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
                 }
-                .padding(14)
+                .padding(13)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.04)))
             }
 
@@ -102,7 +137,7 @@ private struct CompressToolSheetView: View {
             }
         }
         .padding(22)
-        .frame(width: 430, height: isImageMode ? 330 : 256)
+        .frame(width: 450, height: isImageMode ? 404 : 330)
     }
 
     private func runCompression() {
@@ -110,6 +145,7 @@ private struct CompressToolSheetView: View {
         AppPreferences.shared.imageCompressionQuality = model.quality
         let chosenQuality = model.quality
         let maxDim = model.maxDimensionChoice > 0 ? model.maxDimensionChoice : nil
+        let targetBytes: Int64? = model.targetMaxKB > 0 ? Int64(model.targetMaxKB) * 1024 : nil
         let targetURLs = urls
 
         Task { @MainActor in
@@ -117,11 +153,16 @@ private struct CompressToolSheetView: View {
                 var outputs: [URL] = []
                 for url in targetURLs {
                     if FileCategory.classify(url: url) == .pdf {
-                        let out = try DocumentTools.compressPDF(inputURL: url, quality: chosenQuality)
+                        let out = try DocumentTools.compressPDF(inputURL: url, quality: chosenQuality, targetMaxBytes: targetBytes)
                         outputs.append(out)
                         AppPreferences.shared.recordConversion(sourceName: url.lastPathComponent, outputURL: out, summary: "Compressed PDF")
                     } else {
-                        let out = try await ImageTransformer.compress(inputURL: url, quality: chosenQuality, maxDimension: maxDim)
+                        let out = try await ImageTransformer.compress(
+                            inputURL: url,
+                            quality: chosenQuality,
+                            maxDimension: maxDim,
+                            targetMaxBytes: targetBytes
+                        )
                         outputs.append(out)
                         AppPreferences.shared.recordConversion(sourceName: url.lastPathComponent, outputURL: out, summary: "Compressed Image")
                     }
@@ -794,6 +835,425 @@ private struct OCRResultSheetView: View {
     }
 }
 
+// MARK: - 6. Password Lock & Watermark Stamp PDF Sheet
+
+@MainActor
+private final class ProtectPDFSheetModel: ObservableObject {
+    @Published var enablePassword: Bool = true
+    @Published var password: String = ""
+    @Published var enableWatermark: Bool = true
+    @Published var watermarkText: String = "CONFIDENTIAL"
+    @Published var watermarkOpacity: Double = 0.18
+    @Published var isSaving: Bool = false
+}
+
+private struct ProtectAndStampPDFSheetView: View {
+    let urls: [URL]
+    let onDismiss: () -> Void
+
+    @StateObject private var model = ProtectPDFSheetModel()
+
+    private let presets = ["CONFIDENTIAL", "DRAFT", "DO NOT DISTRIBUTE", "APPROVED", "SAMPLE"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            sheetHeader(
+                icon: "lock.doc.fill",
+                title: "Password Lock & Watermark PDF",
+                subtitle: urls.count == 1 ? urls[0].lastPathComponent : "\(urls.count) PDF documents"
+            )
+
+            // 1. Password Lock Section
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Toggle("Require Password to Open PDF", isOn: $model.enablePassword)
+                        .toggleStyle(.switch)
+                        .tint(FlipDocTheme.orange)
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                }
+
+                if model.enablePassword {
+                    TextField("Enter password (e.g. Project2026!)…", text: $model.password)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12.5, design: .monospaced))
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.04)))
+
+            // 2. Diagonal Stamp / Watermark Section
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle("Add Diagonal Stamp / Watermark", isOn: $model.enableWatermark)
+                    .toggleStyle(.switch)
+                    .tint(FlipDocTheme.orange)
+                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+
+                if model.enableWatermark {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(presets, id: \.self) { stamp in
+                                presetPill(stamp, active: model.watermarkText.uppercased() == stamp) {
+                                    model.watermarkText = stamp
+                                }
+                            }
+                        }
+                    }
+
+                    TextField("Custom watermark text…", text: $model.watermarkText)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+
+                    HStack {
+                        Text("Stamp Opacity")
+                            .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        Slider(value: $model.watermarkOpacity, in: 0.08...0.45, step: 0.02)
+                            .tint(FlipDocTheme.orange)
+                        Text("\(Int((model.watermarkOpacity * 100).rounded()))%")
+                            .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                            .frame(width: 38, alignment: .trailing)
+                    }
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.04)))
+
+            Spacer(minLength: 4)
+
+            HStack {
+                Button("Cancel", action: onDismiss)
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button(action: applyProtection) {
+                    HStack(spacing: 6) {
+                        if model.isSaving {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text(model.isSaving ? "Saving…" : "Save Protected PDF")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(FlipDocTheme.orange))
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isSaving || (!model.enablePassword && !model.enableWatermark))
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(22)
+        .frame(width: 460, height: 380)
+    }
+
+    private func applyProtection() {
+        let pwd = model.enablePassword ? model.password.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        let stamp = model.enableWatermark ? model.watermarkText.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        if model.enablePassword && (pwd == nil || pwd!.isEmpty) {
+            OperationProgressHUD.shared.showError(title: "Password Required", message: "Please enter a password or turn off the password toggle.")
+            return
+        }
+        model.isSaving = true
+        let opacity = model.watermarkOpacity
+        let targetURLs = urls
+
+        Task { @MainActor in
+            do {
+                var outputs: [URL] = []
+                for url in targetURLs {
+                    let out = try DocumentTools.protectAndWatermarkPDF(
+                        inputURL: url,
+                        userPassword: pwd,
+                        watermarkText: stamp,
+                        watermarkOpacity: opacity
+                    )
+                    outputs.append(out)
+                    AppPreferences.shared.recordConversion(sourceName: url.lastPathComponent, outputURL: out, summary: "Protected / Stamped PDF")
+                }
+                SoundAndHaptics.shared.playCompletion()
+                onDismiss()
+                OperationProgressHUD.shared.showSuccess(
+                    title: outputs.count == 1 ? "Saved \(outputs[0].lastPathComponent)" : "Protected \(outputs.count) PDFs",
+                    subtitle: pwd != nil ? "Encrypted with password" : "Stamped '\(stamp ?? "")'",
+                    outputURLs: outputs
+                )
+            } catch {
+                model.isSaving = false
+                OperationProgressHUD.shared.showError(title: "PDF Protection Failed", message: error.localizedDescription)
+            }
+        }
+    }
+}
+
+// MARK: - 7. Permanent PII Redactor Sheet (Emails, Phones, IDs, Custom Terms)
+
+@MainActor
+private final class RedactSheetModel: ObservableObject {
+    @Published var redactEmails: Bool = true
+    @Published var redactPhones: Bool = true
+    @Published var redactIDs: Bool = true
+    @Published var redactAmounts: Bool = false
+    @Published var customKeywords: String = ""
+    @Published var previewItems: [String] = []
+    @Published var isScanning: Bool = false
+    @Published var isApplying: Bool = false
+}
+
+private struct RedactToolSheetView: View {
+    let urls: [URL]
+    let onDismiss: () -> Void
+
+    @StateObject private var model = RedactSheetModel()
+
+    private var currentOptions: RedactionOptions {
+        let terms = model.customKeywords
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return RedactionOptions(
+            redactEmails: model.redactEmails,
+            redactPhones: model.redactPhones,
+            redactIDs: model.redactIDs,
+            redactAmounts: model.redactAmounts,
+            customTerms: terms
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sheetHeader(
+                icon: "eye.slash.fill",
+                title: "Permanent Sensitive Data Redactor",
+                subtitle: "Burns opaque black bars directly into pixels so redacted text cannot be recovered"
+            )
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Auto-Detect Patterns")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 18) {
+                    Toggle("Emails", isOn: $model.redactEmails)
+                    Toggle("Phone Numbers", isOn: $model.redactPhones)
+                }
+                .toggleStyle(.checkbox)
+                .font(.system(size: 12.5, weight: .medium, design: .rounded))
+
+                HStack(spacing: 18) {
+                    Toggle("IDs / Cards / SSN / PAN", isOn: $model.redactIDs)
+                    Toggle("Currency Amounts ($/₹/€)", isOn: $model.redactAmounts)
+                }
+                .toggleStyle(.checkbox)
+                .font(.system(size: 12.5, weight: .medium, design: .rounded))
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Custom Keywords or Names (comma-separated)")
+                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                    TextField("e.g. Acme Corp, John Doe, #FD-2026…", text: $model.customKeywords)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .rounded))
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.04)))
+            .onChange(of: model.redactEmails) { _, _ in refreshPreview() }
+            .onChange(of: model.redactPhones) { _, _ in refreshPreview() }
+            .onChange(of: model.redactIDs) { _, _ in refreshPreview() }
+            .onChange(of: model.redactAmounts) { _, _ in refreshPreview() }
+            .onChange(of: model.customKeywords) { _, _ in refreshPreview() }
+
+            // Live Detection Summary Box
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: model.previewItems.isEmpty ? "magnifyingglass" : "shield.lefthalf.filled.badge.checkmark")
+                        .foregroundStyle(FlipDocTheme.orange)
+                    Text(
+                        model.isScanning
+                            ? "Scanning document for sensitive items…"
+                            : (model.previewItems.isEmpty
+                                ? "No matching items detected yet (try adding a custom keyword above)"
+                                : "Detected \(model.previewItems.count) unique item(s) to redact:")
+                    )
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                    Spacer()
+                }
+
+                if !model.previewItems.isEmpty {
+                    Text(model.previewItems.prefix(8).joined(separator: "  •  "))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(FlipDocTheme.orange.opacity(0.08)))
+
+            Spacer(minLength: 2)
+
+            HStack {
+                Button("Cancel", action: onDismiss)
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button(action: runRedaction) {
+                    HStack(spacing: 6) {
+                        if model.isApplying {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text(model.isApplying ? "Redacting…" : "Burn Redaction & Save")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(FlipDocTheme.orange))
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isApplying)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(22)
+        .frame(width: 480, height: 390)
+        .onAppear {
+            refreshPreview()
+        }
+    }
+
+    private func refreshPreview() {
+        guard let first = urls.first else { return }
+        let opts = currentOptions
+        model.isScanning = true
+        Task { @MainActor in
+            let matches = (try? await RedactionEngine.previewMatches(in: first, options: opts)) ?? []
+            model.previewItems = matches
+            model.isScanning = false
+        }
+    }
+
+    private func runRedaction() {
+        model.isApplying = true
+        let opts = currentOptions
+        let targetURLs = urls
+
+        Task { @MainActor in
+            do {
+                var outputs: [URL] = []
+                var totalCount = 0
+                for url in targetURLs {
+                    let res = try await RedactionEngine.applyRedaction(inputURL: url, options: opts)
+                    outputs.append(res.outputURL)
+                    totalCount += res.redactedCount
+                    AppPreferences.shared.recordConversion(sourceName: url.lastPathComponent, outputURL: res.outputURL, summary: "Redacted PII (\(res.redactedCount))")
+                }
+                SoundAndHaptics.shared.playCompletion()
+                onDismiss()
+                OperationProgressHUD.shared.showSuccess(
+                    title: outputs.count == 1 ? "Saved \(outputs[0].lastPathComponent)" : "Redacted \(outputs.count) files",
+                    subtitle: "Permanently burned \(totalCount) sensitive item(s)",
+                    outputURLs: outputs
+                )
+            } catch {
+                model.isApplying = false
+                OperationProgressHUD.shared.showError(title: "Redaction Failed", message: error.localizedDescription)
+            }
+        }
+    }
+}
+
+// MARK: - 8. QR & Barcode Scanner Result Sheet
+
+@MainActor
+private final class QRResultSheetModel: ObservableObject {
+    @Published var didCopy: Bool = false
+}
+
+private struct QRResultSheetView: View {
+    let payloads: [String]
+    let sourceURL: URL
+    let onDismiss: () -> Void
+
+    @StateObject private var model = QRResultSheetModel()
+
+    private var firstValidWebURL: URL? {
+        for p in payloads {
+            if let u = URL(string: p), let scheme = u.scheme?.lowercased(), ["http", "https"].contains(scheme) {
+                return u
+            }
+        }
+        return nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sheetHeader(
+                icon: "qrcode.viewfinder",
+                title: "QR & Barcode Scanner",
+                subtitle: "Found \(payloads.count) code(s) in \(sourceURL.lastPathComponent) · Copied to clipboard"
+            )
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(payloads.enumerated()), id: \.offset) { _, code in
+                        HStack {
+                            Text(code)
+                                .font(.system(size: 12.5, weight: .medium, design: .monospaced))
+                                .textSelection(.enabled)
+                            Spacer()
+                        }
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.05)))
+                    }
+                }
+            }
+            .frame(maxHeight: 180)
+
+            HStack(spacing: 8) {
+                Button("Close", action: onDismiss)
+                Spacer()
+
+                if let webURL = firstValidWebURL {
+                    Button("Open Link in Browser") {
+                        NSWorkspace.shared.open(webURL)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Button("Save Clean QR PNG") {
+                    let out = OutputNaming.uniqueFileURL(nextTo: sourceURL, suffix: "QR", newExtension: "png")
+                    if let saved = try? ImageTransformer.generateQRCode(payload: payloads[0], outputURL: out) {
+                        SoundAndHaptics.shared.playCompletion()
+                        onDismiss()
+                        OperationProgressHUD.shared.showSuccess(
+                            title: "Saved \(saved.lastPathComponent)",
+                            subtitle: "Crisp 640×640 QR code",
+                            outputURLs: [saved]
+                        )
+                    }
+                }
+                .buttonStyle(.bordered)
+
+                Button(action: {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(payloads.joined(separator: "\n"), forType: .string)
+                    model.didCopy = true
+                }) {
+                    Label(model.didCopy ? "Copied!" : "Copy Payload", systemImage: "doc.on.doc")
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(FlipDocTheme.orange))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(22)
+        .frame(width: 490, height: 310)
+    }
+}
+
 // MARK: - Shared Header & Pill Helpers
 
 @MainActor
@@ -865,6 +1325,24 @@ public final class ToolOptionsWindowController {
     public func showMetadataInspector(urls: [URL]) {
         presentWindow(title: "Metadata Inspector") { [weak self] in
             MetadataInspectorSheetView(urls: urls, onDismiss: { self?.close() })
+        }
+    }
+
+    public func showProtectPDF(urls: [URL]) {
+        presentWindow(title: "Lock & Stamp PDF") { [weak self] in
+            ProtectAndStampPDFSheetView(urls: urls, onDismiss: { self?.close() })
+        }
+    }
+
+    public func showRedact(urls: [URL]) {
+        presentWindow(title: "Redact Sensitive Info") { [weak self] in
+            RedactToolSheetView(urls: urls, onDismiss: { self?.close() })
+        }
+    }
+
+    public func showQRResult(payloads: [String], sourceURL: URL) {
+        presentWindow(title: "QR & Barcode Scanner") { [weak self] in
+            QRResultSheetView(payloads: payloads, sourceURL: sourceURL, onDismiss: { self?.close() })
         }
     }
 

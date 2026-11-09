@@ -1,5 +1,6 @@
 import Foundation
-import Vision
+@preconcurrency import Vision
+import CoreImage
 import AppKit
 import PDFKit
 
@@ -15,6 +16,71 @@ public final class VisionOCREngine: Sendable {
         }
         let cgImage = try ImageTransformer.loadOrientedCGImage(from: url)
         return try await recognizeCGImage(cgImage)
+    }
+
+    /// Scans QR codes and barcodes in an image or PDF using Apple Vision + CoreImage `CIDetectorTypeQRCode` fallback.
+    public func detectBarcodes(from url: URL) async throws -> [String] {
+        let cgImages: [CGImage]
+        if url.pathExtension.lowercased() == "pdf" {
+            guard let doc = PDFDocument(url: url) else {
+                throw FlipDocError("Failed to open PDF for QR scanning.")
+            }
+            cgImages = (0..<doc.pageCount).compactMap { idx in
+                guard let page = doc.page(at: idx) else { return nil }
+                return try? renderPDFPageToCGImage(page: page, scale: 2.5)
+            }
+        } else {
+            cgImages = [try ImageTransformer.loadOrientedCGImage(from: url)]
+        }
+
+        var payloads: [String] = []
+        for cgImage in cgImages {
+            // 1. CoreImage CIDetector QR fast-path (100% deterministic on CPU & CI VMs)
+            let ciImage = CIImage(cgImage: cgImage)
+            if let detector = CIDetector(
+                ofType: CIDetectorTypeQRCode,
+                context: nil,
+                options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]
+            ) {
+                let features = detector.features(in: ciImage)
+                for case let qr as CIQRCodeFeature in features {
+                    if let msg = qr.messageString?.trimmingCharacters(in: .whitespacesAndNewlines), !msg.isEmpty {
+                        payloads.append(msg)
+                    }
+                }
+            }
+
+            // 2. Vision VNDetectBarcodesRequest for 1D/2D barcodes (EAN, Code128, Aztec, PDF417, QR)
+            let visionPayloads = (try? await detectVisionBarcodes(in: cgImage)) ?? []
+            payloads.append(contentsOf: visionPayloads)
+        }
+
+        var unique: [String] = []
+        for p in payloads where !unique.contains(p) {
+            unique.append(p)
+        }
+        return unique
+    }
+
+    private func detectVisionBarcodes(in cgImage: CGImage) async throws -> [String] {
+        try await withCheckedThrowingContinuation { continuation in
+            let request = VNDetectBarcodesRequest { request, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                let observations = (request.results as? [VNBarcodeObservation]) ?? []
+                let strings = observations.compactMap { $0.payloadStringValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                continuation.resume(returning: strings)
+            }
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            do {
+                try handler.perform([request])
+            } catch {
+                continuation.resume(returning: [])
+            }
+        }
     }
 
     private func recognizePDF(from pdfURL: URL) async throws -> String {
@@ -104,4 +170,3 @@ public final class VisionOCREngine: Sendable {
         }
     }
 }
-

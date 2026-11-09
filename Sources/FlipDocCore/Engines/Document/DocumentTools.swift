@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import CoreText
 import PDFKit
 import ImageIO
 import UniformTypeIdentifiers
@@ -266,8 +267,9 @@ public enum DocumentTools {
         return outURL
     }
 
-    /// Compresses a PDF by downsampling heavy pages with JPEG compression when smaller than lossless rewrite.
-    public static func compressPDF(inputURL: URL, quality: Double = 0.65) throws -> URL {
+    /// Compresses a PDF by downsampling heavy pages with JPEG compression when smaller than lossless rewrite,
+    /// with optional strict `targetMaxBytes` portal limit (`< 200 KB`, `< 500 KB`, `< 1 MB`, `< 2 MB`).
+    public static func compressPDF(inputURL: URL, quality: Double = 0.65, targetMaxBytes: Int64? = nil) throws -> URL {
         guard let doc = PDFDocument(url: inputURL), doc.pageCount > 0 else {
             throw FlipDocError("Failed to open PDF.")
         }
@@ -278,39 +280,81 @@ public enum DocumentTools {
         let losslessTemp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
         defer { try? FileManager.default.removeItem(at: losslessTemp) }
         doc.write(to: losslessTemp)
+        let losslessBytes = (try? FileManager.default.attributesOfItem(atPath: losslessTemp.path)[.size] as? Int) ?? Int.max
 
-        // Also build a raster-compressed PDF at adaptive DPI for image-heavy scans
-        let rasterTemp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
-        defer { try? FileManager.default.removeItem(at: rasterTemp) }
-
-        let dpiScale: CGFloat = quality > 0.75 ? 2.2 : (quality > 0.45 ? 1.75 : 1.35)
-        let compressedDoc = PDFDocument()
-        for i in 0..<doc.pageCount {
-            guard let page = doc.page(at: i),
-                  let cg = try? VisionOCREngine.shared.renderPDFPageToCGImage(page: page, scale: dpiScale) else { continue }
-            let data = NSMutableData()
-            if let dest = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) {
-                let props: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: max(0.25, min(0.92, quality))]
-                CGImageDestinationAddImage(dest, cg, props as CFDictionary)
-                CGImageDestinationFinalize(dest)
-                if let jpgImg = NSImage(data: data as Data), let newPage = PDFPage(image: jpgImg) {
-                    newPage.setBounds(page.bounds(for: .mediaBox), for: .mediaBox)
-                    compressedDoc.insert(newPage, at: compressedDoc.pageCount)
+        func buildRasterPDF(dpiScale: CGFloat, jpegQuality: Double, to destURL: URL) -> Int {
+            let compressedDoc = PDFDocument()
+            for i in 0..<doc.pageCount {
+                guard let page = doc.page(at: i),
+                      let cg = try? VisionOCREngine.shared.renderPDFPageToCGImage(page: page, scale: dpiScale) else { continue }
+                let data = NSMutableData()
+                if let dest = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) {
+                    let props: [CFString: Any] = [
+                        kCGImageDestinationLossyCompressionQuality: max(0.16, min(0.92, jpegQuality)),
+                        kCGImageDestinationEmbedThumbnail: false
+                    ]
+                    CGImageDestinationAddImage(dest, cg, props as CFDictionary)
+                    CGImageDestinationFinalize(dest)
+                    if let jpgImg = NSImage(data: data as Data), let newPage = PDFPage(image: jpgImg) {
+                        newPage.setBounds(page.bounds(for: .mediaBox), for: .mediaBox)
+                        compressedDoc.insert(newPage, at: compressedDoc.pageCount)
+                    }
                 }
             }
+            guard compressedDoc.pageCount == doc.pageCount else { return Int.max }
+            compressedDoc.write(to: destURL)
+            return (try? FileManager.default.attributesOfItem(atPath: destURL.path)[.size] as? Int) ?? Int.max
         }
-        compressedDoc.write(to: rasterTemp)
 
-        let losslessBytes = (try? FileManager.default.attributesOfItem(atPath: losslessTemp.path)[.size] as? Int) ?? Int.max
-        let rasterBytes = (try? FileManager.default.attributesOfItem(atPath: rasterTemp.path)[.size] as? Int) ?? Int.max
+        // If a strict portal byte limit is requested, step down DPI & JPEG quality until under limit
+        if let maxBytes = targetMaxBytes, maxBytes > 0 {
+            if Int64(losslessBytes) <= maxBytes {
+                try FileManager.default.copyItem(at: losslessTemp, to: outURL)
+                return outURL
+            }
+            let candidates: [(CGFloat, Double)] = [
+                (1.75, 0.65),
+                (1.40, 0.52),
+                (1.10, 0.42),
+                (0.85, 0.34),
+                (0.65, 0.25),
+                (0.50, 0.18)
+            ]
+            var smallestTemp: URL? = nil
+            var smallestSize = losslessBytes
+
+            defer {
+                if let s = smallestTemp { try? FileManager.default.removeItem(at: s) }
+            }
+
+            for (scale, q) in candidates {
+                let candidateTemp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
+                let bytes = buildRasterPDF(dpiScale: scale, jpegQuality: q, to: candidateTemp)
+                if bytes < smallestSize {
+                    if let old = smallestTemp { try? FileManager.default.removeItem(at: old) }
+                    smallestTemp = candidateTemp
+                    smallestSize = bytes
+                } else {
+                    try? FileManager.default.removeItem(at: candidateTemp)
+                }
+                if Int64(bytes) <= maxBytes {
+                    break
+                }
+            }
+
+            let winner = smallestTemp ?? losslessTemp
+            try FileManager.default.copyItem(at: winner, to: outURL)
+            return outURL
+        }
+
+        // Standard quality slider mode
+        let rasterTemp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
+        defer { try? FileManager.default.removeItem(at: rasterTemp) }
+        let dpiScale: CGFloat = quality > 0.75 ? 2.2 : (quality > 0.45 ? 1.75 : 1.35)
+        let rasterBytes = buildRasterPDF(dpiScale: dpiScale, jpegQuality: quality, to: rasterTemp)
 
         // Pick whichever valid output actually achieves smaller size without inflating pure-vector text PDFs
-        let bestSource: URL
-        if rasterBytes < losslessBytes && rasterBytes < originalBytes && compressedDoc.pageCount == doc.pageCount {
-            bestSource = rasterTemp
-        } else {
-            bestSource = losslessTemp
-        }
+        let bestSource = (rasterBytes < losslessBytes && rasterBytes < originalBytes) ? rasterTemp : losslessTemp
         try FileManager.default.copyItem(at: bestSource, to: outURL)
         return outURL
     }
@@ -324,6 +368,238 @@ public enum DocumentTools {
         guard doc.write(to: outURL) else {
             throw FlipDocError("Failed saving cleaned PDF.")
         }
+        return outURL
+    }
+
+    /// Applies a diagonal vector watermark stamp (`CONFIDENTIAL`, `DRAFT`, `APPROVED`, or custom text)
+    /// and/or encrypts the PDF with a user password (`LOCK PDF`).
+    public static func protectAndWatermarkPDF(
+        inputURL: URL,
+        userPassword: String? = nil,
+        ownerPassword: String? = nil,
+        watermarkText: String? = nil,
+        watermarkOpacity: Double = 0.18
+    ) throws -> URL {
+        guard let doc = PDFDocument(url: inputURL), doc.pageCount > 0 else {
+            throw FlipDocError("Failed to open PDF.")
+        }
+
+        let cleanPassword = userPassword?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let cleanStamp = watermarkText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let hasPassword = !cleanPassword.isEmpty
+        let hasStamp = !cleanStamp.isEmpty
+
+        let suffix: String
+        if hasPassword && hasStamp {
+            suffix = "Protected"
+        } else if hasPassword {
+            suffix = "Locked"
+        } else {
+            suffix = "Stamped"
+        }
+        let outURL = OutputNaming.uniqueFileURL(nextTo: inputURL, suffix: suffix, newExtension: "pdf")
+
+        var auxInfo: [CFString: Any] = [:]
+        if hasPassword {
+            auxInfo[kCGPDFContextUserPassword] = cleanPassword
+            auxInfo[kCGPDFContextOwnerPassword] = (ownerPassword?.isEmpty == false) ? ownerPassword! : cleanPassword
+        }
+
+        var defaultBox = doc.page(at: 0)?.bounds(for: .mediaBox) ?? CGRect(x: 0, y: 0, width: 595.28, height: 841.89)
+        guard let ctx = CGContext(outURL as CFURL, mediaBox: &defaultBox, auxInfo as CFDictionary) else {
+            throw FlipDocError("Failed creating protected PDF context.")
+        }
+
+        for i in 0..<doc.pageCount {
+            guard let page = doc.page(at: i) else { continue }
+            var pageBox = page.bounds(for: .mediaBox)
+            ctx.beginPage(mediaBox: &pageBox)
+
+            // Draw original vector PDF page
+            ctx.saveGState()
+            page.draw(with: .mediaBox, to: ctx)
+            ctx.restoreGState()
+
+            // Draw diagonal vector stamp if requested
+            if hasStamp {
+                ctx.saveGState()
+                ctx.translateBy(x: pageBox.midX, y: pageBox.midY)
+                ctx.rotate(by: -34.0 * .pi / 180.0)
+
+                let maxSpan = hypot(pageBox.width, pageBox.height) * 0.68
+                let baseFontSize = min(68.0, max(28.0, maxSpan / CGFloat(max(5, cleanStamp.count)) * 1.45))
+                let font = NSFont.boldSystemFont(ofSize: baseFontSize)
+                let alpha = CGFloat(max(0.06, min(0.65, watermarkOpacity)))
+                let stampColor = NSColor(srgbRed: 0.85, green: 0.16, blue: 0.12, alpha: alpha)
+
+                let attr = NSAttributedString(
+                    string: cleanStamp.uppercased(),
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: stampColor,
+                        .kern: 3.0
+                    ]
+                )
+                let line = CTLineCreateWithAttributedString(attr)
+                let bounds = CTLineGetBoundsWithOptions(line, [])
+
+                // Outer stamp frame
+                let padX: CGFloat = 22
+                let padY: CGFloat = 12
+                let frameRect = CGRect(
+                    x: -bounds.width / 2 - padX,
+                    y: -bounds.height / 2 - padY,
+                    width: bounds.width + padX * 2,
+                    height: bounds.height + padY * 2
+                )
+                let borderPath = CGPath(roundedRect: frameRect, cornerWidth: 10, cornerHeight: 10, transform: nil)
+                ctx.addPath(borderPath)
+                ctx.setStrokeColor(stampColor.cgColor)
+                ctx.setLineWidth(3.0)
+                ctx.strokePath()
+
+                ctx.textPosition = CGPoint(x: -bounds.width / 2, y: -bounds.height / 2 - bounds.origin.y * 0.35)
+                CTLineDraw(line, ctx)
+                ctx.restoreGState()
+            }
+
+            ctx.endPage()
+        }
+
+        ctx.closePDF()
+        return outURL
+    }
+
+    /// Generates a 3-Up Lecture / Study Handout PDF (`<Name> Handout.pdf`) with slide thumbnails on the left
+    /// and ruled note-taking lines on the right for iPad (GoodNotes/Notability) or printing.
+    public static func createStudyHandoutPDF(inputURL: URL, slidesPerPage: Int = 3) throws -> URL {
+        guard let doc = PDFDocument(url: inputURL), doc.pageCount > 0 else {
+            throw FlipDocError("Failed to open PDF for handout generation.")
+        }
+
+        let perPage = max(2, min(4, slidesPerPage))
+        let outURL = OutputNaming.uniqueFileURL(nextTo: inputURL, suffix: "Handout", newExtension: "pdf")
+        let title = OutputNaming.baseName(for: inputURL)
+
+        let pageW: CGFloat = 595.28 // A4 Portrait
+        let pageH: CGFloat = 841.89
+        let margin: CGFloat = 36.0
+        let headerH: CGFloat = 38.0
+        var mediaBox = CGRect(x: 0, y: 0, width: pageW, height: pageH)
+
+        guard let ctx = CGContext(outURL as CFURL, mediaBox: &mediaBox, nil) else {
+            throw FlipDocError("Failed creating handout PDF context.")
+        }
+
+        let totalHandoutPages = Int(ceil(Double(doc.pageCount) / Double(perPage)))
+        let usableTop = pageH - margin - headerH
+        let usableHeight = usableTop - margin
+        let slotGap: CGFloat = 18.0
+        let slotHeight = (usableHeight - slotGap * CGFloat(perPage - 1)) / CGFloat(perPage)
+
+        func drawText(_ s: String, x: CGFloat, y: CGFloat, size: CGFloat, bold: Bool = false, color: NSColor = .black) {
+            let font = bold ? NSFont.boldSystemFont(ofSize: size) : NSFont.systemFont(ofSize: size, weight: .medium)
+            let attr = NSAttributedString(string: s, attributes: [.font: font, .foregroundColor: color])
+            ctx.textPosition = CGPoint(x: x, y: y)
+            CTLineDraw(CTLineCreateWithAttributedString(attr), ctx)
+        }
+
+        for handoutPage in 0..<totalHandoutPages {
+            ctx.beginPage(mediaBox: &mediaBox)
+
+            // White canvas
+            ctx.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+            ctx.fill(mediaBox)
+
+            // Header bar
+            let headerY = pageH - margin - 16
+            drawText(title, x: margin, y: headerY, size: 13, bold: true, color: NSColor(srgbRed: 0.12, green: 0.13, blue: 0.15, alpha: 1))
+            let rightLabel = "Study Handout  •  Page \(handoutPage + 1) of \(totalHandoutPages)"
+            drawText(rightLabel, x: pageW - margin - 175, y: headerY, size: 10, bold: false, color: .gray)
+
+            ctx.setStrokeColor(CGColor(srgbRed: 0.88, green: 0.89, blue: 0.90, alpha: 1))
+            ctx.setLineWidth(1.0)
+            ctx.move(to: CGPoint(x: margin, y: pageH - margin - 26))
+            ctx.addLine(to: CGPoint(x: pageW - margin, y: pageH - margin - 26))
+            ctx.strokePath()
+
+            for slot in 0..<perPage {
+                let slideIdx = handoutPage * perPage + slot
+                guard slideIdx < doc.pageCount, let slidePage = doc.page(at: slideIdx) else { break }
+
+                let slotTop = usableTop - CGFloat(slot) * (slotHeight + slotGap)
+                let slotBottom = slotTop - slotHeight
+
+                // Left column: Slide Box (46% of content width)
+                let contentW = pageW - margin * 2
+                let slideColW = contentW * 0.46
+                let badgeSpace: CGFloat = 18.0
+                let boxMaxH = slotHeight - badgeSpace
+                let srcBounds = slidePage.bounds(for: .mediaBox)
+                let srcW = max(1.0, srcBounds.width)
+                let srcH = max(1.0, srcBounds.height)
+                let scale = min(slideColW / srcW, boxMaxH / srcH)
+                let drawW = srcW * scale
+                let drawH = srcH * scale
+                let drawX = margin + (slideColW - drawW) / 2.0
+                let drawY = slotBottom + badgeSpace + (boxMaxH - drawH) / 2.0
+                let slideRect = CGRect(x: drawX, y: drawY, width: drawW, height: drawH)
+
+                // Subtle shadow & border around slide
+                ctx.saveGState()
+                ctx.setFillColor(CGColor(srgbRed: 0.985, green: 0.985, blue: 0.99, alpha: 1))
+                ctx.fill(slideRect)
+                ctx.clip(to: slideRect)
+                ctx.translateBy(x: drawX - srcBounds.minX * scale, y: drawY - srcBounds.minY * scale)
+                ctx.scaleBy(x: scale, y: scale)
+                slidePage.draw(with: .mediaBox, to: ctx)
+                ctx.restoreGState()
+
+                ctx.setStrokeColor(CGColor(srgbRed: 0.78, green: 0.80, blue: 0.83, alpha: 1))
+                ctx.setLineWidth(0.9)
+                ctx.stroke(slideRect)
+
+                // Slide number caption beneath thumbnail
+                drawText(
+                    "Slide \(slideIdx + 1) of \(doc.pageCount)",
+                    x: drawX,
+                    y: drawY - 13,
+                    size: 9.0,
+                    bold: true,
+                    color: NSColor(srgbRed: 1.0, green: 0.322, blue: 0.0, alpha: 1)
+                )
+
+                // Right column: Ruled Note-Taking Lines (50% of content width)
+                let notesX = margin + slideColW + 20.0
+                let notesW = pageW - margin - notesX
+                let lineCount = 8
+                let topLineY = slotTop - 16.0
+                let bottomLineY = slotBottom + 14.0
+                let lineStep = (topLineY - bottomLineY) / CGFloat(max(1, lineCount - 1))
+
+                drawText(
+                    "KEY NOTES & ACTION ITEMS",
+                    x: notesX,
+                    y: slotTop - 4,
+                    size: 8.0,
+                    bold: true,
+                    color: NSColor(srgbRed: 0.55, green: 0.57, blue: 0.60, alpha: 1)
+                )
+
+                ctx.setStrokeColor(CGColor(srgbRed: 0.85, green: 0.87, blue: 0.90, alpha: 1))
+                ctx.setLineWidth(0.75)
+                for l in 0..<lineCount {
+                    let ly = topLineY - CGFloat(l) * lineStep
+                    ctx.move(to: CGPoint(x: notesX, y: ly))
+                    ctx.addLine(to: CGPoint(x: notesX + notesW, y: ly))
+                }
+                ctx.strokePath()
+            }
+
+            ctx.endPage()
+        }
+
+        ctx.closePDF()
         return outURL
     }
 
